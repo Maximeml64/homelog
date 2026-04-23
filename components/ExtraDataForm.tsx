@@ -1,0 +1,367 @@
+// components/ExtraDataForm.tsx
+
+import React from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { CATEGORY_FIELDS, CategoryField } from '../constants/categoryFields';
+import { colors, fontSize, fontWeight, radius, spacing } from '../constants/theme';
+import { DatePickerInput } from './DatePickerInput';
+
+const ENERGY_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
+  'A+++': { bg: '#00A651', text: '#fff' },
+  'A++':  { bg: '#2DB24A', text: '#fff' },
+  'A+':   { bg: '#57B947', text: '#fff' },
+  'A':    { bg: '#A8CE3B', text: '#fff' },
+  'B':    { bg: '#FFF200', text: '#333' },
+  'C':    { bg: '#FDB913', text: '#333' },
+  'D':    { bg: '#F37021', text: '#fff' },
+  'E':    { bg: '#EF4023', text: '#fff' },
+  'F':    { bg: '#BE1E2D', text: '#fff' },
+  'G':    { bg: '#8B0000', text: '#fff' },
+};
+
+const DPE_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
+  'A': { bg: '#00A651', text: '#fff' },
+  'B': { bg: '#57B947', text: '#fff' },
+  'C': { bg: '#A8CE3B', text: '#333' },
+  'D': { bg: '#FFF200', text: '#333' },
+  'E': { bg: '#FDB913', text: '#333' },
+  'F': { bg: '#F37021', text: '#fff' },
+  'G': { bg: '#EF4023', text: '#fff' },
+};
+
+// ExtraData stocke les dates en ISO (YYYY-MM-DD)
+// DatePickerInput travaille aussi en ISO — pas de conversion nécessaire
+
+interface Props {
+  categoryId: string;
+  values: Record<string, any>;
+  onChange: (key: string, value: any) => void;
+}
+
+export function ExtraDataForm({ categoryId, values, onChange }: Props) {
+  const fields = CATEGORY_FIELDS[categoryId];
+
+  if (!fields || fields.length === 0) return null;
+
+  const renderField = (field: CategoryField) => {
+    const value = values[field.key];
+
+    switch (field.type) {
+      case 'text':
+      case 'number':
+        return (
+          <View key={field.key} style={styles.fieldContainer}>
+            <Text style={styles.label}>{field.label}</Text>
+            <View style={styles.inputRow}>
+              <TextInput
+                style={[styles.input, field.unit ? styles.inputWithUnit : null]}
+                value={value !== undefined && value !== null ? String(value) : ''}
+                onChangeText={(text) => {
+                  if (field.type === 'number') {
+                    const parsed = parseFloat(text);
+                    onChange(field.key, isNaN(parsed) ? undefined : parsed);
+                  } else {
+                    onChange(field.key, text || undefined);
+                  }
+                }}
+                placeholder={field.placeholder ?? ''}
+                placeholderTextColor={colors.textTertiary}
+                keyboardType={field.type === 'number' ? 'decimal-pad' : 'default'}
+              />
+              {field.unit && (
+                <View style={styles.unitBadge}>
+                  <Text style={styles.unitText}>{field.unit}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        );
+
+      case 'date':
+        return (
+          <View key={field.key} style={styles.fieldContainer}>
+            <DatePickerInput
+              label={field.label}
+              value={value ?? ''}
+              onChange={(iso) => onChange(field.key, iso || undefined)}
+              placeholder="JJ/MM/AAAA"
+            />
+          </View>
+        );
+
+      case 'boolean':
+        return (
+          <View key={field.key} style={styles.fieldContainer}>
+            <Text style={styles.label}>{field.label}</Text>
+            <View style={styles.boolRow}>
+              {[
+                { label: 'Oui', val: true },
+                { label: 'Non', val: false },
+              ].map(({ label, val }) => {
+                const isSelected = value === val;
+                return (
+                  <TouchableOpacity
+                    key={label}
+                    style={[styles.boolButton, isSelected && styles.boolButtonSelected]}
+                    onPress={() => onChange(field.key, isSelected ? undefined : val)}
+                  >
+                    <Text style={[styles.boolButtonText, isSelected && styles.boolButtonTextSelected]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        );
+
+      case 'select':
+        return (
+          <View key={field.key} style={styles.fieldContainer}>
+            <Text style={styles.label}>{field.label}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.optionsRow}
+            >
+              {field.options?.map((opt) => {
+                const isSelected = value === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[styles.optionChip, isSelected && styles.optionChipSelected]}
+                    onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
+                  >
+                    <Text style={[styles.optionChipText, isSelected && styles.optionChipTextSelected]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        );
+
+      case 'energy_class':
+        return (
+          <View key={field.key} style={styles.fieldContainer}>
+            <Text style={styles.label}>{field.label}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.optionsRow}
+            >
+              {field.options?.map((opt) => {
+                const isSelected = value === opt.value;
+                const ec = ENERGY_CLASS_COLORS[opt.value] ?? { bg: '#ccc', text: '#333' };
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.energyChip,
+                      {
+                        backgroundColor: isSelected ? ec.bg : 'transparent',
+                        borderColor: isSelected ? ec.bg : colors.border,
+                      },
+                    ]}
+                    onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
+                  >
+                    <Text style={[
+                      styles.energyChipText,
+                      { color: isSelected ? ec.text : colors.textSecondary, fontWeight: isSelected ? '700' : '400' },
+                    ]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        );
+
+      case 'dpe_class':
+        return (
+          <View key={field.key} style={styles.fieldContainer}>
+            <Text style={styles.label}>{field.label}</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.optionsRow}
+            >
+              {field.options?.map((opt) => {
+                const isSelected = value === opt.value;
+                const dc = DPE_CLASS_COLORS[opt.value] ?? { bg: '#ccc', text: '#333' };
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.dpeChip,
+                      {
+                        backgroundColor: isSelected ? dc.bg : 'transparent',
+                        borderColor: isSelected ? dc.bg : colors.border,
+                      },
+                    ]}
+                    onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
+                  >
+                    <Text style={[
+                      styles.dpeChipText,
+                      { color: isSelected ? dc.text : colors.textSecondary, fontWeight: isSelected ? '700' : '400' },
+                    ]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.sectionTitle}>Informations détaillées</Text>
+      {fields.map(renderField)}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    marginTop: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: fontWeight.semibold,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  fieldContainer: {
+    marginBottom: spacing.md,
+  },
+  label: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  input: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    fontSize: fontSize.md,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  inputWithUnit: {
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+    borderRightWidth: 0,
+  },
+  unitBadge: {
+    height: 44,
+    paddingHorizontal: spacing.sm,
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderTopRightRadius: radius.md,
+    borderBottomRightRadius: radius.md,
+  },
+  unitText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  boolRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  boolButton: {
+    flex: 1,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  boolButtonSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  boolButtonText: {
+    fontSize: fontSize.md,
+    color: colors.textSecondary,
+  },
+  boolButtonTextSelected: {
+    color: colors.white,
+    fontWeight: fontWeight.semibold,
+  },
+  optionsRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingRight: spacing.sm,
+  },
+  optionChip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  optionChipSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  optionChipText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+  },
+  optionChipTextSelected: {
+    color: colors.white,
+    fontWeight: fontWeight.semibold,
+  },
+  energyChip: {
+    width: 46,
+    height: 36,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  energyChipText: {
+    fontSize: fontSize.xs,
+  },
+  dpeChip: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dpeChipText: {
+    fontSize: fontSize.md,
+  },
+});

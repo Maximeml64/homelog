@@ -1,7 +1,7 @@
 // src/repositories/eventRepository.ts
 
 import { getDatabase, uuidv4 } from '../db/client';
-import { MaintenanceEvent, EventType, Attachment } from '../types';
+import { Attachment, EventType, MaintenanceEvent } from '../types';
 
 function rowToEvent(row: any): MaintenanceEvent {
   return {
@@ -27,7 +27,8 @@ function rowToEvent(row: any): MaintenanceEvent {
 function rowToAttachment(row: any): Attachment {
   return {
     id: row.id,
-    eventId: row.event_id,
+    eventId: row.event_id ?? undefined,
+    assetId: row.asset_id ?? undefined,
     type: row.type,
     uri: row.uri,
     fileName: row.file_name ?? undefined,
@@ -48,18 +49,23 @@ export async function getEventsByAsset(assetId: string): Promise<MaintenanceEven
 export async function getAllEvents(): Promise<MaintenanceEvent[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM maintenance_event ORDER BY event_date DESC`
+    `SELECT me.* FROM maintenance_event me
+     INNER JOIN asset a ON me.asset_id = a.id
+     WHERE a.archived = 0
+     ORDER BY me.event_date DESC`
   );
   return rows.map(rowToEvent);
 }
 
 export async function getUpcomingReminders(): Promise<MaintenanceEvent[]> {
   const db = await getDatabase();
-  const today = new Date().toISOString().split('T')[0];
   const rows = await db.getAllAsync<any>(
-    `SELECT * FROM maintenance_event 
-     WHERE reminder_enabled = 1 AND next_due_date IS NOT NULL
-     ORDER BY next_due_date ASC`,
+    `SELECT me.* FROM maintenance_event me
+     INNER JOIN asset a ON me.asset_id = a.id
+     WHERE me.reminder_enabled = 1
+     AND me.next_due_date IS NOT NULL
+     AND a.archived = 0
+     ORDER BY me.next_due_date ASC`,
   );
   return rows.map(rowToEvent);
 }
@@ -70,7 +76,6 @@ export async function getEventById(id: string): Promise<MaintenanceEvent | null>
     `SELECT * FROM maintenance_event WHERE id = ?`, [id]
   );
   if (!row) return null;
-
   const event = rowToEvent(row);
   event.attachments = await getAttachmentsByEvent(id);
   return event;
@@ -178,11 +183,84 @@ export async function getAnnualCost(year: number): Promise<number> {
   return row?.total ?? 0;
 }
 
+export async function getUpcomingCost(): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(me.cost), 0) as total
+     FROM maintenance_event me
+     INNER JOIN asset a ON me.asset_id = a.id
+     WHERE me.status = 'upcoming'
+     AND a.archived = 0`
+  );
+  return row?.total ?? 0;
+}
+
+// Dépenses par mois sur les 12 derniers mois
+export async function getMonthlyCosts(year: number): Promise<{ month: number; total: number }[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ month: string; total: number }>(
+    `SELECT strftime('%m', event_date) as month, COALESCE(SUM(cost), 0) as total
+     FROM maintenance_event
+     WHERE strftime('%Y', event_date) = ?
+     AND status = 'past'
+     AND cost IS NOT NULL
+     GROUP BY strftime('%m', event_date)
+     ORDER BY month ASC`,
+    [year.toString()]
+  );
+  // Retourne 12 mois, 0 si pas de données
+  const result = Array.from({ length: 12 }, (_, i) => ({
+    month: i + 1,
+    total: 0,
+  }));
+  rows.forEach(r => {
+    const idx = parseInt(r.month, 10) - 1;
+    if (idx >= 0 && idx < 12) result[idx].total = r.total;
+  });
+  return result;
+}
+
+// Dépenses par catégorie de bien sur une année
+export async function getCostByCategory(year: number): Promise<{ categoryId: string; total: number }[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{ category_id: string; total: number }>(
+    `SELECT a.category_id, COALESCE(SUM(me.cost), 0) as total
+     FROM maintenance_event me
+     INNER JOIN asset a ON me.asset_id = a.id
+     WHERE strftime('%Y', me.event_date) = ?
+     AND me.status = 'past'
+     AND me.cost IS NOT NULL
+     AND a.archived = 0
+     GROUP BY a.category_id
+     ORDER BY total DESC`,
+    [year.toString()]
+  );
+  return rows.map(r => ({ categoryId: r.category_id, total: r.total }));
+}
+
+// Valeur totale du patrimoine (prix d'achat des biens)
+export async function getTotalPatrimony(): Promise<number> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(purchase_price), 0) as total FROM asset WHERE archived = 0`
+  );
+  return row?.total ?? 0;
+}
+
 export async function getAttachmentsByEvent(eventId: string): Promise<Attachment[]> {
   const db = await getDatabase();
   const rows = await db.getAllAsync<any>(
     `SELECT * FROM attachment WHERE event_id = ? ORDER BY created_at ASC`,
     [eventId]
+  );
+  return rows.map(rowToAttachment);
+}
+
+export async function getAttachmentsByAsset(assetId: string): Promise<Attachment[]> {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<any>(
+    `SELECT * FROM attachment WHERE asset_id = ? ORDER BY created_at ASC`,
+    [assetId]
   );
   return rows.map(rowToAttachment);
 }
@@ -195,9 +273,9 @@ export async function createAttachment(
   const now = new Date().toISOString();
 
   await db.runAsync(
-    `INSERT INTO attachment (id, event_id, type, uri, file_name, mime_type, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, data.eventId, data.type, data.uri, data.fileName ?? null, data.mimeType ?? null, now]
+    `INSERT INTO attachment (id, event_id, asset_id, type, uri, file_name, mime_type, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, data.eventId ?? null, data.assetId ?? null, data.type, data.uri, data.fileName ?? null, data.mimeType ?? null, now]
   );
 
   return { ...data, id, createdAt: now };
