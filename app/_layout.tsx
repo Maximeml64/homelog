@@ -8,7 +8,7 @@ import { colors } from '../constants/theme';
 import { requestNotificationPermission } from '../src/services/notificationService';
 import { useAppStore } from '../src/stores/appStore';
 
-const RC_API_KEY = 'appl_VJxZZjZuONSsAEuyJDdfevbcbhL';
+const RC_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 
 export default function RootLayout() {
   const { loadAppState, initRevenueCat } = useAppStore();
