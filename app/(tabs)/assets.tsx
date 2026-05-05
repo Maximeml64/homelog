@@ -201,7 +201,17 @@ export default function AssetsScreen() {
         })}
       </ScrollView>
 
-      {/* FAB */}
+      {/* FAB scan — au-dessus du FAB principal */}
+      <TouchableOpacity
+        style={styles.fabScan}
+        onPress={() => router.push('/asset/scan-invoice')}
+        accessibilityRole="button"
+        accessibilityLabel="Scanner une facture"
+      >
+        <Text style={styles.fabScanText}>📄</Text>
+      </TouchableOpacity>
+
+      {/* FAB principal — ajout manuel */}
       <TouchableOpacity style={styles.fab} onPress={handleAdd}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
@@ -311,4 +321,17 @@ const styles = StyleSheet.create({
     ...shadow.lg,
   },
   fabText: { color: colors.white, fontSize: 28, fontWeight: fontWeight.bold, lineHeight: 32 },
+  fabScan: {
+    position: 'absolute',
+    bottom: spacing.xl + 56 + spacing.sm,
+    right: spacing.md,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadow.lg,
+  },
+  fabScanText: { fontSize: 24, lineHeight: 28 },
 });

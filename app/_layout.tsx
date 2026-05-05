@@ -3,6 +3,7 @@
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import Constants from 'expo-constants';
 import Purchases from 'react-native-purchases';
 import { colors } from '../constants/theme';
 import { requestNotificationPermission } from '../src/services/notificationService';
@@ -10,14 +11,23 @@ import { useAppStore } from '../src/stores/appStore';
 
 const RC_API_KEY = process.env.EXPO_PUBLIC_REVENUECAT_API_KEY ?? '';
 
+const isExpoGo =
+  (Constants.appOwnership as string) === 'expo' ||
+  Constants.executionEnvironment === 'storeClient';
+
 export default function RootLayout() {
   const { loadAppState, initRevenueCat } = useAppStore();
 
   useEffect(() => {
-    try {
-      Purchases.configure({ apiKey: RC_API_KEY });
-    } catch (e) {
-      // Non disponible sur Expo Go
+    if (isExpoGo) {
+      console.warn('[RC] Skipping configure in Expo Go (use dev build for RC features)');
+    } else {
+      try {
+        Purchases.configure({ apiKey: RC_API_KEY });
+      } catch (e) {
+        // Non-fatal — log and continue
+        console.warn('[RC] configure failed:', e);
+      }
     }
 
     loadAppState().then(async () => {
@@ -49,6 +59,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="asset/add" options={{ title: 'Nouveau bien', presentation: 'modal' }} />
+        <Stack.Screen name="asset/scan-invoice" options={{ title: 'Scanner une facture', presentation: 'modal' }} />
         <Stack.Screen name="asset/[id]" options={{ title: '' }} />
         <Stack.Screen name="asset/edit/[id]" options={{ title: 'Modifier', presentation: 'modal' }} />
         <Stack.Screen name="event/add" options={{ title: 'Nouvel événement', presentation: 'modal' }} />

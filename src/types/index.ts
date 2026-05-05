@@ -368,3 +368,24 @@ export interface SubscriptionState {
   isPremium: boolean;
   expiresAt?: string;
 }
+
+// --- Invoice OCR ---
+
+export interface ParsedInvoice {
+  vendor_name: string | null;
+  vendor_address: string | null;
+  vendor_siret: string | null;
+  invoice_number: string | null;
+  purchase_date: string | null;
+  item_name: string | null;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  category_suggestion: AssetCategoryId | null;
+  total_ttc: number | null;
+  total_ht: number | null;
+  vat_amount: number | null;
+  warranty_years: number | null;
+  payment_method: string | null;
+  notes: string | null;
+}
