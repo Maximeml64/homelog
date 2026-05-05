@@ -6,7 +6,7 @@ import { create } from 'zustand';
 import { SubscriptionState } from '../types';
 
 const MAX_FREE_ASSETS = 3;
-const ENTITLEMENT_ID = 'Homelog Pro';
+const ENTITLEMENT_ID = 'premium';
 
 interface AppStore {
   subscription: SubscriptionState;
@@ -22,6 +22,7 @@ interface AppStore {
   loadAppState: () => Promise<void>;
   initRevenueCat: () => Promise<void>;
   purchasePremium: () => Promise<{ success: boolean; error?: string }>;
+  purchasePackage: (pkg: PurchasesPackage) => Promise<{ success: boolean; error?: string }>;
   restorePurchases: () => Promise<{ success: boolean; error?: string }>;
 }
 
@@ -97,6 +98,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return { success: false };
       }
       return { success: false, error: e?.message ?? 'Erreur lors de l\'achat' };
+    }
+  },
+
+  purchasePackage: async (pkg) => {
+    set({ isLoadingPurchase: true });
+    try {
+      const { customerInfo } = await Purchases.purchasePackage(pkg);
+      const isPremium = checkPremium(customerInfo);
+      set({ isPremium, subscription: { isPremium }, isLoadingPurchase: false });
+      return { success: isPremium };
+    } catch (e: any) {
+      set({ isLoadingPurchase: false });
+      if (e?.userCancelled) {
+        return { success: false };
+      }
+      return { success: false, error: e?.message ?? "Erreur lors de l'achat" };
     }
   },
 
