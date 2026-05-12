@@ -1,32 +1,61 @@
 // app/event/edit/[id].tsx
 
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Bell, BellOff, StickyNote } from 'lucide-react-native';
 import {
-  Alert,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { DatePickerInput } from '../../../components/DatePickerInput';
+  Card,
+  CategoryIcon,
+  DateField,
+  FormSection,
+  Screen,
+  SelectGrid,
+  SelectGridOption,
+  StyledText,
+  TextField,
+  Toggle,
+} from '../../../components/ui';
+import { EVENT_TYPE_ICON_MAP } from '../../../components/ui/EventTypeIcon';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '../../../constants/theme';
 import { EVENT_TYPES } from '../../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../../constants/theme';
 import { getEventById } from '../../../src/repositories/eventRepository';
-import { cancelReminder, scheduleReminder } from '../../../src/services/notificationService';
+import {
+  cancelReminder,
+  scheduleReminder,
+} from '../../../src/services/notificationService';
 import { useAssetStore } from '../../../src/stores/assetStore';
 import { useEventStore } from '../../../src/stores/eventStore';
-import { EventType, MaintenanceEvent } from '../../../src/types';
+import { formatLongDate, getCategoryLabel } from '../../../src/utils/format';
+import type { EventType, MaintenanceEvent } from '../../../src/types';
 
-const VEHICLE_CATEGORIES = ['car', 'moto', 'bike', 'scooter'];
+const VEHICLE_CATEGORIES: ReadonlySet<string> = new Set([
+  'car',
+  'moto',
+  'bike',
+  'scooter',
+]);
+
+const VALID_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'maintenance',
+  'repair',
+  'inspection',
+  'cleaning',
+  'replacement',
+  'incident',
+  'warranty',
+  'note',
+]);
+
+function isEventType(val: string): val is EventType {
+  return VALID_EVENT_TYPES.has(val);
+}
 
 export default function EditEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { assets } = useAssetStore();
-  const { editEvent, fetchEventsByAsset, fetchUpcomingReminders } = useEventStore();
+  const { editEvent, fetchEventsByAsset, fetchUpcomingReminders } =
+    useEventStore();
 
   const [original, setOriginal] = useState<MaintenanceEvent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,36 +63,48 @@ export default function EditEventScreen() {
 
   const [eventType, setEventType] = useState<EventType>('maintenance');
   const [title, setTitle] = useState('');
-  const [eventDate, setEventDate] = useState('');
+  const [eventDate, setEventDate] = useState<string | undefined>(undefined);
   const [cost, setCost] = useState('');
   const [providerName, setProviderName] = useState('');
   const [mileage, setMileage] = useState('');
   const [notes, setNotes] = useState('');
-  const [nextDueDate, setNextDueDate] = useState('');
+  const [nextDueDate, setNextDueDate] = useState<string | undefined>(undefined);
   const [nextDueMileage, setNextDueMileage] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(false);
 
   useEffect(() => {
-    if (!id) return;
-    getEventById(id).then(event => {
-      if (!event) { setLoading(false); return; }
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+    getEventById(id).then((event) => {
+      if (!event) {
+        setLoading(false);
+        return;
+      }
       setOriginal(event);
       setEventType(event.eventType);
       setTitle(event.title);
       setEventDate(event.eventDate);
       setCost(event.cost !== undefined ? String(event.cost) : '');
       setProviderName(event.providerName ?? '');
-      setMileage(event.mileageAtEvent !== undefined ? String(event.mileageAtEvent) : '');
+      setMileage(
+        event.mileageAtEvent !== undefined ? String(event.mileageAtEvent) : '',
+      );
       setNotes(event.notes ?? '');
-      setNextDueDate(event.nextDueDate ?? '');
-      setNextDueMileage(event.nextDueMileage !== undefined ? String(event.nextDueMileage) : '');
+      setNextDueDate(event.nextDueDate ?? undefined);
+      setNextDueMileage(
+        event.nextDueMileage !== undefined ? String(event.nextDueMileage) : '',
+      );
       setReminderEnabled(event.reminderEnabled);
       setLoading(false);
     });
   }, [id]);
 
-  const asset = original ? assets.find(a => a.id === original.assetId) : null;
-  const isVehicle = asset ? VEHICLE_CATEGORIES.includes(asset.categoryId) : false;
+  const asset = original
+    ? assets.find((a) => a.id === original.assetId)
+    : null;
+  const isVehicle = asset ? VEHICLE_CATEGORIES.has(asset.categoryId) : false;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -73,13 +114,21 @@ export default function EditEventScreen() {
 
   const isPast = parsedDate ? parsedDate <= today : true;
   const isUpcoming = !isPast;
-  const statusLabel = parsedDate ? (isUpcoming ? 'À venir' : 'Passé') : null;
-  const canEnableReminder = !!parsedNextDueDate && parsedNextDueDate > today;
+  const canEnableReminder =
+    !!parsedNextDueDate && parsedNextDueDate > today;
 
-  function formatDisplay(iso: string): string {
-    if (!iso) return '';
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
+  const eventTypeOptions: SelectGridOption[] = useMemo(
+    () =>
+      EVENT_TYPES.map((t) => ({
+        id: t.id,
+        label: t.label,
+        icon: EVENT_TYPE_ICON_MAP[t.id] ?? StickyNote,
+      })),
+    [],
+  );
+
+  function handleTypeSelect(value: string) {
+    if (isEventType(value)) setEventType(value);
   }
 
   async function handleSave() {
@@ -109,8 +158,8 @@ export default function EditEventScreen() {
         const notifId = await scheduleReminder(
           tempId,
           asset?.name ?? 'Entretien',
-          title,
-          reminderDate
+          title.trim(),
+          reminderDate,
         );
         reminderNotifId = notifId ?? undefined;
       }
@@ -119,12 +168,14 @@ export default function EditEventScreen() {
         eventType,
         title: title.trim(),
         eventDate,
-        cost: cost ? parseFloat(cost.replace(',', '.')) : undefined,
+        cost: cost.trim() ? parseFloat(cost.replace(',', '.')) : undefined,
         providerName: providerName.trim() || undefined,
         notes: notes.trim() || undefined,
-        mileageAtEvent: mileage ? parseInt(mileage, 10) : undefined,
+        mileageAtEvent: mileage.trim() ? parseInt(mileage, 10) : undefined,
         nextDueDate: nextDueDate || undefined,
-        nextDueMileage: nextDueMileage ? parseInt(nextDueMileage, 10) : undefined,
+        nextDueMileage: nextDueMileage.trim()
+          ? parseInt(nextDueMileage, 10)
+          : undefined,
         reminderEnabled: reminderEnabled && canEnableReminder,
         reminderNotifId,
         status: isPast ? 'past' : 'upcoming',
@@ -134,7 +185,10 @@ export default function EditEventScreen() {
       await fetchUpcomingReminders();
       router.back();
     } catch (e: any) {
-      Alert.alert('Erreur', e.message ?? "Impossible de modifier l'événement.");
+      Alert.alert(
+        'Erreur',
+        e?.message ?? "Impossible de modifier l'événement.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -142,268 +196,319 @@ export default function EditEventScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.secondaryText}>Chargement…</Text>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator color={COLORS.primary} />
       </View>
     );
   }
 
   if (!original) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.secondaryText}>Événement introuvable</Text>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: SPACING.lg,
+        }}
+      >
+        <StyledText
+          variant="h3"
+          align="center"
+          style={{ marginBottom: SPACING.sm }}
+        >
+          Événement introuvable
+        </StyledText>
+        <StyledText variant="body" color={COLORS.textSecondary} align="center">
+          Cet événement n'existe plus.
+        </StyledText>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            {
+              marginTop: SPACING.lg,
+              paddingHorizontal: SPACING.lg,
+              paddingVertical: SPACING.sm,
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.sm,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <StyledText variant="smallMedium" color={COLORS.textInverse}>
+            Retour
+          </StyledText>
+        </Pressable>
       </View>
     );
   }
 
   return (
-    <KeyboardAwareScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      keyboardShouldPersistTaps="handled"
-    >
-      {asset && (
-        <View style={styles.assetBadge}>
-          <Text style={styles.assetBadgeText}>{asset.name}</Text>
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Screen
+        contentContainerStyle={{
+          paddingHorizontal: SPACING.lg,
+          paddingBottom: 110,
+        }}
+      >
+        {/* HEADER */}
+        <View style={{ paddingTop: SPACING.lg, paddingBottom: SPACING.lg }}>
+          <StyledText variant="eyebrow">MODIFIER L'ÉVÉNEMENT</StyledText>
+          <StyledText variant="h2" style={{ marginTop: SPACING.xs }}>
+            Modifier
+          </StyledText>
         </View>
-      )}
 
-      <Text style={styles.label}>Type d'événement</Text>
-      <View style={styles.typeGrid}>
-        {EVENT_TYPES.map(t => (
-          <TouchableOpacity
-            key={t.id}
-            style={[styles.typeChip, eventType === t.id && styles.typeChipActive]}
-            onPress={() => setEventType(t.id as EventType)}
+        {/* BIEN ASSOCIÉ */}
+        {asset && (
+          <Card
+            variant="outlined"
+            padding="base"
+            radius="md"
+            style={{ marginBottom: SPACING.xl }}
           >
-            <Text style={styles.typeChipIcon}>{t.icon}</Text>
-            <Text style={[styles.typeChipLabel, eventType === t.id && styles.typeChipLabelActive]}>
-              {t.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: SPACING.md,
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: RADIUS.sm,
+                  backgroundColor: COLORS.surfaceAlt,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <CategoryIcon
+                  categoryId={asset.categoryId}
+                  size={18}
+                  color={COLORS.textSecondary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <StyledText variant="eyebrow" style={{ fontSize: 10 }}>
+                  BIEN ASSOCIÉ
+                </StyledText>
+                <StyledText variant="bodyMedium" numberOfLines={1}>
+                  {asset.name}
+                </StyledText>
+                <StyledText variant="caption" color={COLORS.textTertiary}>
+                  {getCategoryLabel(asset.categoryId)}
+                </StyledText>
+              </View>
+            </View>
+          </Card>
+        )}
 
-      <Text style={styles.label}>Titre <Text style={styles.required}>*</Text></Text>
-      <TextInput
-        style={styles.input}
-        value={title}
-        onChangeText={setTitle}
-        placeholder="Ex : Vidange, Révision 30 000 km…"
-        placeholderTextColor={colors.textTertiary}
-      />
+        {/* TYPE */}
+        <FormSection>
+          <SelectGrid
+            label="TYPE"
+            required
+            options={eventTypeOptions}
+            selectedId={eventType}
+            onSelect={handleTypeSelect}
+            columns={4}
+          />
+        </FormSection>
 
-      <View style={styles.dateRow}>
-        <View style={{ flex: 1 }}>
-          <DatePickerInput
-            label="Date de l'événement *"
+        {/* INFORMATIONS */}
+        <FormSection title="INFORMATIONS">
+          <TextField
+            label="TITRE"
+            required
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Ex : Vidange, Révision 30 000 km…"
+          />
+          <DateField
+            label="DATE DE L'ÉVÉNEMENT"
+            required
             value={eventDate}
             onChange={setEventDate}
-            placeholder="Choisir une date"
           />
-        </View>
-        {statusLabel && (
-          <View style={[styles.statusBadge, isUpcoming ? styles.statusBadgeUpcoming : styles.statusBadgePast, { marginTop: 28 }]}>
-            <Text style={[styles.statusBadgeText, isUpcoming ? styles.statusBadgeTextUpcoming : styles.statusBadgeTextPast]}>
-              {statusLabel}
-            </Text>
+          {eventDate && (
+            <View
+              style={{
+                alignSelf: 'flex-start',
+                paddingHorizontal: SPACING.sm,
+                paddingVertical: 4,
+                borderRadius: RADIUS.full,
+                backgroundColor: isUpcoming
+                  ? COLORS.accentMuted
+                  : COLORS.surfaceAlt,
+              }}
+            >
+              <StyledText
+                variant="caption"
+                color={isUpcoming ? COLORS.accentDark : COLORS.textSecondary}
+                style={{
+                  fontFamily: FONTS.sansSemiBold,
+                  letterSpacing: 0.8,
+                }}
+              >
+                {isUpcoming ? 'À VENIR' : 'PASSÉ'}
+              </StyledText>
+            </View>
+          )}
+          <TextField
+            label="COÛT (€)"
+            value={cost}
+            onChangeText={setCost}
+            placeholder="0,00"
+            keyboardType="decimal-pad"
+          />
+          <TextField
+            label="PRESTATAIRE"
+            value={providerName}
+            onChangeText={setProviderName}
+            placeholder="Nom du garage, technicien…"
+          />
+          {isVehicle && (
+            <TextField
+              label="KILOMÉTRAGE À L'ÉVÉNEMENT"
+              value={mileage}
+              onChangeText={setMileage}
+              placeholder="Ex : 45 000"
+              keyboardType="number-pad"
+            />
+          )}
+        </FormSection>
+
+        {/* PROCHAIN ENTRETIEN */}
+        <FormSection title="PROCHAIN ENTRETIEN">
+          <DateField
+            label="DATE PROCHAINE ÉCHÉANCE"
+            value={nextDueDate}
+            onChange={setNextDueDate}
+            minDate={today}
+          />
+          {isVehicle && (
+            <TextField
+              label="KILOMÉTRAGE PROCHAINE ÉCHÉANCE"
+              value={nextDueMileage}
+              onChangeText={setNextDueMileage}
+              placeholder="Ex : 60 000"
+              keyboardType="number-pad"
+            />
+          )}
+          <View
+            style={{
+              opacity: canEnableReminder ? 1 : 0.5,
+              marginTop: SPACING.xs,
+            }}
+          >
+            <Toggle
+              label="Rappel de notification"
+              description={
+                canEnableReminder && nextDueDate
+                  ? `Notification le ${formatLongDate(nextDueDate)} à 9h`
+                  : 'Renseigne une date future pour activer'
+              }
+              value={reminderEnabled && canEnableReminder}
+              onValueChange={(val) => {
+                if (!canEnableReminder) return;
+                setReminderEnabled(val);
+              }}
+              isLast
+            />
           </View>
-        )}
-      </View>
+          {canEnableReminder && reminderEnabled && (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: SPACING.xs,
+                marginTop: SPACING.xs,
+              }}
+            >
+              <Bell size={12} color={COLORS.accentDark} strokeWidth={2} />
+              <StyledText variant="caption" color={COLORS.accentDark}>
+                Vous recevrez un rappel
+              </StyledText>
+            </View>
+          )}
+          {!canEnableReminder && (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: SPACING.xs,
+                marginTop: SPACING.xs,
+              }}
+            >
+              <BellOff
+                size={12}
+                color={COLORS.textTertiary}
+                strokeWidth={2}
+              />
+              <StyledText variant="caption" color={COLORS.textTertiary}>
+                Rappel désactivé
+              </StyledText>
+            </View>
+          )}
+        </FormSection>
 
-      <Text style={styles.label}>Coût (€)</Text>
-      <TextInput
-        style={styles.input}
-        value={cost}
-        onChangeText={setCost}
-        placeholder="0.00"
-        placeholderTextColor={colors.textTertiary}
-        keyboardType="decimal-pad"
-      />
-
-      <Text style={styles.label}>Prestataire</Text>
-      <TextInput
-        style={styles.input}
-        value={providerName}
-        onChangeText={setProviderName}
-        placeholder="Nom du garage, technicien…"
-        placeholderTextColor={colors.textTertiary}
-      />
-
-      {isVehicle && (
-        <>
-          <Text style={styles.label}>Kilométrage à l'événement</Text>
-          <TextInput
-            style={styles.input}
-            value={mileage}
-            onChangeText={setMileage}
-            placeholder="Ex : 45000"
-            placeholderTextColor={colors.textTertiary}
-            keyboardType="number-pad"
+        {/* NOTES */}
+        <FormSection title="NOTES">
+          <TextField
+            label="NOTES"
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Observations, pièces remplacées…"
+            multiline
+            numberOfLines={4}
           />
-        </>
-      )}
+        </FormSection>
+      </Screen>
 
-      <Text style={styles.sectionSeparator}>Prochain entretien</Text>
-
-      <DatePickerInput
-        label="Date du prochain entretien"
-        value={nextDueDate}
-        onChange={setNextDueDate}
-        placeholder="Choisir une date"
-      />
-
-      {isVehicle && (
-        <>
-          <Text style={styles.label}>Prochain kilométrage</Text>
-          <TextInput
-            style={styles.input}
-            value={nextDueMileage}
-            onChangeText={setNextDueMileage}
-            placeholder="Ex : 60000"
-            placeholderTextColor={colors.textTertiary}
-            keyboardType="number-pad"
-          />
-        </>
-      )}
-
-      <View style={[styles.reminderRow, !canEnableReminder && styles.reminderRowDisabled]}>
-        <View style={styles.reminderInfo}>
-          <Text style={styles.reminderLabel}>Rappel de notification</Text>
-          <Text style={styles.reminderSub}>
-            {canEnableReminder
-              ? `Notification le ${formatDisplay(nextDueDate)}`
-              : 'Renseigne une date de prochain entretien pour activer'}
-          </Text>
-        </View>
-        <Switch
-          value={reminderEnabled && canEnableReminder}
-          onValueChange={(val) => {
-            if (!canEnableReminder) return;
-            setReminderEnabled(val);
-          }}
-          trackColor={{ false: colors.textTertiary, true: colors.primary }}
-          thumbColor={colors.white}
-          ios_backgroundColor={colors.textTertiary}
-        />
-      </View>
-
-      <Text style={styles.label}>Notes</Text>
-      <TextInput
-        style={[styles.input, styles.inputMultiline]}
-        value={notes}
-        onChangeText={setNotes}
-        placeholder="Observations, pièces remplacées…"
-        placeholderTextColor={colors.textTertiary}
-        multiline
-        numberOfLines={4}
-        textAlignVertical="top"
-      />
-
-      <TouchableOpacity
-        style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
-        onPress={handleSave}
-        disabled={submitting}
+      {/* STICKY BOTTOM */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.md,
+          paddingBottom: SPACING.lg,
+          backgroundColor: COLORS.background,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+        }}
       >
-        <Text style={styles.submitButtonText}>
-          {submitting ? 'Enregistrement…' : 'Enregistrer les modifications'}
-        </Text>
-      </TouchableOpacity>
-    </KeyboardAwareScrollView>
+        <Pressable
+          onPress={handleSave}
+          disabled={submitting}
+          style={({ pressed }) => [
+            {
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.md,
+              paddingVertical: SPACING.md,
+              alignItems: 'center',
+              ...SHADOWS.sm,
+            },
+            (pressed || submitting) && { opacity: 0.85 },
+          ]}
+        >
+          <StyledText variant="title" color={COLORS.textInverse}>
+            {submitting ? 'Enregistrement…' : 'Enregistrer les modifications'}
+          </StyledText>
+        </Pressable>
+      </View>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: 60 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  secondaryText: { color: colors.textSecondary, fontSize: fontSize.md },
-  assetBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  assetBadgeText: { fontSize: fontSize.sm, color: colors.primary, fontWeight: fontWeight.semibold },
-  label: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
-  },
-  required: { color: colors.danger },
-  sectionSeparator: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: spacing.xl,
-    marginBottom: spacing.xs,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    fontSize: fontSize.md,
-    color: colors.text,
-    ...shadow.sm,
-  },
-  inputMultiline: { height: 100, paddingTop: 12 },
-  dateRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  statusBadge: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.full },
-  statusBadgePast: { backgroundColor: colors.surfaceAlt },
-  statusBadgeUpcoming: { backgroundColor: colors.primaryLight },
-  statusBadgeText: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  statusBadgeTextPast: { color: colors.textSecondary },
-  statusBadgeTextUpcoming: { color: colors.primary },
-  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  typeChip: {
-    width: '23%',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    alignItems: 'center',
-    gap: 4,
-    ...shadow.sm,
-  },
-  typeChipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
-  typeChipIcon: { fontSize: 20 },
-  typeChipLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
-  typeChipLabelActive: { color: colors.primary, fontWeight: fontWeight.semibold },
-  reminderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.sm,
-  },
-  reminderRowDisabled: { opacity: 0.5 },
-  reminderInfo: { flex: 1 },
-  reminderLabel: { fontSize: fontSize.md, fontWeight: fontWeight.medium, color: colors.text },
-  reminderSub: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  submitButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: colors.white, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
-});

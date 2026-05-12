@@ -1,22 +1,29 @@
 // components/AttachmentsSection.tsx
 
+import React, { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
-import { useState } from 'react';
 import {
-    Alert,
-    Image,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
 import {
-    createAttachment,
-    deleteAttachment,
+  FileText,
+  Image as ImageIcon,
+  Paperclip,
+  Plus,
+} from 'lucide-react-native';
+import { COLORS, FONTS, RADIUS, SPACING } from '../constants/theme';
+import {
+  createAttachment,
+  deleteAttachment,
 } from '../src/repositories/eventRepository';
+import { logger } from '../src/utils/logger';
 import { Attachment } from '../src/types';
 
 interface Props {
@@ -26,44 +33,31 @@ interface Props {
   onChanged: () => void;
 }
 
-function getAttachmentIcon(type: string, mimeType?: string): string {
-  if (type === 'photo') return '🖼️';
-  if (mimeType?.includes('pdf')) return '📄';
-  return '📎';
-}
-
 function getAttachmentLabel(attachment: Attachment): string {
   if (attachment.fileName) return attachment.fileName;
   if (attachment.type === 'photo') return 'Photo';
   return 'Document';
 }
 
-export default function AttachmentsSection({ attachments, eventId, assetId, onChanged }: Props) {
+function isPdf(att: Attachment): boolean {
+  return att.type === 'pdf' || !!att.mimeType?.includes('pdf');
+}
+
+export default function AttachmentsSection({
+  attachments,
+  eventId,
+  assetId,
+  onChanged,
+}: Props) {
   const [loading, setLoading] = useState(false);
 
   async function handleAdd() {
-    Alert.alert(
-      'Ajouter une pièce jointe',
-      '',
-      [
-        {
-          text: '📷 Appareil photo',
-          onPress: handleCamera,
-        },
-        {
-          text: '🖼️ Galerie',
-          onPress: handleGallery,
-        },
-        {
-          text: '📄 Document / PDF',
-          onPress: handleDocument,
-        },
-        {
-          text: 'Annuler',
-          style: 'cancel',
-        },
-      ]
-    );
+    Alert.alert('Ajouter une pièce jointe', '', [
+      { text: 'Appareil photo', onPress: handleCamera },
+      { text: 'Galerie', onPress: handleGallery },
+      { text: 'Document / PDF', onPress: handleDocument },
+      { text: 'Annuler', style: 'cancel' },
+    ]);
   }
 
   async function handleCamera() {
@@ -73,7 +67,7 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       quality: 0.8,
     });
     if (!result.canceled) {
@@ -87,13 +81,14 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
   }
 
   async function handleGallery() {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission refusée', "L'accès à la galerie est nécessaire.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: 'images',
       quality: 0.8,
     });
     if (!result.canceled) {
@@ -115,10 +110,10 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
     });
     if (!result.canceled && result.assets[0]) {
       const doc = result.assets[0];
-      const isPdf = doc.mimeType?.includes('pdf');
+      const isPdfMime = doc.mimeType?.includes('pdf');
       const isImage = doc.mimeType?.startsWith('image/');
       await saveAttachment({
-        type: isPdf ? 'pdf' : isImage ? 'photo' : 'document',
+        type: isPdfMime ? 'pdf' : isImage ? 'photo' : 'document',
         uri: doc.uri,
         mimeType: doc.mimeType ?? 'application/octet-stream',
         fileName: doc.name,
@@ -143,7 +138,8 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
         fileName: data.fileName,
       });
       onChanged();
-    } catch (e: any) {
+    } catch (e) {
+      logger.error('AttachmentsSection', 'saveAttachment failed', e);
       Alert.alert('Erreur', 'Impossible de sauvegarder la pièce jointe.');
     } finally {
       setLoading(false);
@@ -156,8 +152,9 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
         mimeType: attachment.mimeType ?? 'application/octet-stream',
         dialogTitle: getAttachmentLabel(attachment),
       });
-    } catch {
-      Alert.alert('Erreur', 'Impossible d\'ouvrir ce fichier.');
+    } catch (e) {
+      logger.warn('AttachmentsSection', 'shareAsync failed', e);
+      Alert.alert('Erreur', "Impossible d'ouvrir ce fichier.");
     }
   }
 
@@ -175,36 +172,41 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
             onChanged();
           },
         },
-      ]
+      ],
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Pièces jointes</Text>
-        <TouchableOpacity
-          style={styles.addButton}
+    <View>
+      {attachments.length === 0 ? (
+        <Pressable
           onPress={handleAdd}
           disabled={loading}
+          style={({ pressed }) => [styles.emptyButton, pressed && { opacity: 0.6 }]}
         >
-          <Text style={styles.addButtonText}>+ Ajouter</Text>
-        </TouchableOpacity>
-      </View>
-
-      {attachments.length === 0 ? (
-        <TouchableOpacity style={styles.emptyButton} onPress={handleAdd}>
-          <Text style={styles.emptyIcon}>📎</Text>
+          <Paperclip
+            size={16}
+            color={COLORS.textTertiary}
+            strokeWidth={1.75}
+          />
           <Text style={styles.emptyText}>
             Photos, factures, garanties…
           </Text>
-        </TouchableOpacity>
+          <Plus
+            size={14}
+            color={COLORS.textSecondary}
+            strokeWidth={2}
+          />
+        </Pressable>
       ) : (
         <View style={styles.list}>
-          {attachments.map(attachment => (
-            <TouchableOpacity
+          {attachments.map((attachment) => (
+            <Pressable
               key={attachment.id}
-              style={styles.item}
+              style={({ pressed }) => [
+                styles.item,
+                pressed && { opacity: 0.7 },
+              ]}
               onPress={() => handleOpen(attachment)}
               onLongPress={() => handleDelete(attachment)}
             >
@@ -215,16 +217,41 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
                 />
               ) : (
                 <View style={styles.iconContainer}>
-                  <Text style={styles.icon}>
-                    {getAttachmentIcon(attachment.type, attachment.mimeType)}
-                  </Text>
+                  {isPdf(attachment) ? (
+                    <FileText
+                      size={20}
+                      color={COLORS.textSecondary}
+                      strokeWidth={1.5}
+                    />
+                  ) : (
+                    <Paperclip
+                      size={20}
+                      color={COLORS.textSecondary}
+                      strokeWidth={1.5}
+                    />
+                  )}
                 </View>
               )}
               <Text style={styles.itemLabel} numberOfLines={1}>
                 {getAttachmentLabel(attachment)}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
+          <Pressable
+            onPress={handleAdd}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.addTile,
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <Plus
+              size={20}
+              color={COLORS.textSecondary}
+              strokeWidth={1.75}
+            />
+            <Text style={styles.addTileText}>Ajouter</Text>
+          </Pressable>
         </View>
       )}
     </View>
@@ -232,51 +259,26 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  title: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-  },
-  addButton: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  addButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.primary,
-    fontWeight: fontWeight.medium,
-  },
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    gap: SPACING.sm,
+    padding: SPACING.base,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: COLORS.border,
   },
-  emptyIcon: { fontSize: 20 },
   emptyText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    flex: 1,
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
   list: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: SPACING.sm,
   },
   item: {
     alignItems: 'center',
@@ -285,23 +287,40 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: 64,
     height: 64,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     marginBottom: 4,
+    backgroundColor: COLORS.surfaceAlt,
   },
   iconContainer: {
     width: 64,
     height: 64,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceAlt,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surfaceAlt,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
   },
-  icon: { fontSize: 28 },
   itemLabel: {
+    fontFamily: FONTS.sans,
     fontSize: 10,
-    color: colors.textSecondary,
+    color: COLORS.textSecondary,
     textAlign: 'center',
     width: 64,
+  },
+  addTile: {
+    width: 64,
+    height: 64,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: COLORS.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  addTileText: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 10,
+    color: COLORS.textSecondary,
   },
 });

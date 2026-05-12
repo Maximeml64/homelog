@@ -1,57 +1,110 @@
 // app/paywall.tsx
 
-import { router } from 'expo-router';
-import { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import { router } from 'expo-router';
 import { PurchasesPackage } from 'react-native-purchases';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+import {
+  BarChart3,
+  Bell,
+  Check,
+  FileDown,
+  Infinity as InfinityIcon,
+  LucideIcon,
+  Sparkles,
+} from 'lucide-react-native';
+import { Card, Screen, Separator, StyledText } from '../components/ui';
+import {
+  COLORS,
+  FONTS,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+} from '../constants/theme';
 import { useAppStore } from '../src/stores/appStore';
 
-const FEATURES = [
-  { icon: '🏠', label: 'Biens illimités', sub: 'Gratuit : limité à 3 biens' },
-  { icon: '📊', label: 'Statistiques avancées', sub: 'Coûts par catégorie, tendances' },
-  { icon: '📄', label: 'Export PDF', sub: 'Historique complet exportable' },
-  { icon: '🔔', label: 'Rappels illimités', sub: 'Autant de rappels que nécessaire' },
+interface Feature {
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+const FEATURES: Feature[] = [
+  {
+    label: 'Biens illimités',
+    description: 'Sans limite — au-delà des 3 biens gratuits',
+    icon: InfinityIcon,
+  },
+  {
+    label: 'Statistiques avancées',
+    description: 'Coûts par catégorie, tendances annuelles',
+    icon: BarChart3,
+  },
+  {
+    label: 'Export PDF & CSV',
+    description: 'Rapport complet à l\'export, en un tap',
+    icon: FileDown,
+  },
+  {
+    label: 'Rappels illimités',
+    description: 'Autant de rappels d\'entretien que nécessaire',
+    icon: Bell,
+  },
 ];
 
-function hasFreeTrialMonth(pkg: PurchasesPackage): boolean {
-  return pkg.product.introPrice !== null && pkg.product.introPrice?.price === 0;
+function hasFreeTrial(pkg: PurchasesPackage): boolean {
+  return (
+    pkg.product.introPrice !== null && pkg.product.introPrice?.price === 0
+  );
 }
 
 function computeSavingsPercent(
-  monthlyPkg: PurchasesPackage,
-  annualPkg: PurchasesPackage,
+  monthly: PurchasesPackage,
+  annual: PurchasesPackage,
 ): number | null {
-  const mp = monthlyPkg.product.price;
+  const mp = monthly.product.price;
   if (!mp) return null;
-  const annualPerMonth = annualPkg.product.price / 12;
+  const annualPerMonth = annual.product.price / 12;
   const savings = Math.round((1 - annualPerMonth / mp) * 100);
   return savings > 0 ? savings : null;
 }
 
+type TierKind = 'monthly' | 'annual' | 'lifetime';
+
 export default function PaywallScreen() {
-  const { purchasePackage, restorePurchases, packages } = useAppStore();
+  const { purchasePackage, restorePurchases, packages, isLoadingPurchase } =
+    useAppStore();
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  const [selected, setSelected] = useState<TierKind>('annual');
 
-  const annualPkg = packages.find(p => p.packageType === 'ANNUAL');
-  const monthlyPkg = packages.find(p => p.packageType === 'MONTHLY');
-  const lifetimePkg = packages.find(p => p.packageType === 'LIFETIME');
+  const annualPkg = packages.find((p) => p.packageType === 'ANNUAL');
+  const monthlyPkg = packages.find((p) => p.packageType === 'MONTHLY');
+  const lifetimePkg = packages.find((p) => p.packageType === 'LIFETIME');
 
-  const savingsPercent =
-    monthlyPkg && annualPkg ? computeSavingsPercent(monthlyPkg, annualPkg) : null;
-  const trialMonthly = monthlyPkg ? hasFreeTrialMonth(monthlyPkg) : false;
+  const savingsPercent = useMemo(() => {
+    if (!monthlyPkg || !annualPkg) return null;
+    return computeSavingsPercent(monthlyPkg, annualPkg);
+  }, [monthlyPkg, annualPkg]);
 
-  async function handlePurchase(pkg: PurchasesPackage) {
-    setPurchasing(pkg.identifier);
-    const { success, error } = await purchasePackage(pkg);
+  const trialMonthly = monthlyPkg ? hasFreeTrial(monthlyPkg) : false;
+
+  const selectedPkg =
+    selected === 'monthly'
+      ? monthlyPkg
+      : selected === 'annual'
+      ? annualPkg
+      : lifetimePkg;
+
+  async function handlePurchase() {
+    if (!selectedPkg) return;
+    setPurchasing(selectedPkg.identifier);
+    const { success, error } = await purchasePackage(selectedPkg);
     setPurchasing(null);
     if (success) {
       router.back();
@@ -72,330 +125,393 @@ export default function PaywallScreen() {
     }
   }
 
-  const isAnyPurchasing = purchasing !== null;
+  const noPackages = !annualPkg && !monthlyPkg && !lifetimePkg;
+  const ctaLabel = useMemo(() => {
+    if (!selectedPkg) return 'Indisponible';
+    if (selected === 'lifetime') {
+      return `Acheter à vie · ${selectedPkg.product.priceString}`;
+    }
+    if (selected === 'monthly' && trialMonthly) {
+      return "Commencer l'essai gratuit";
+    }
+    return `S'abonner · ${selectedPkg.product.priceString}`;
+  }, [selected, selectedPkg, trialMonthly]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-
-      {/* Hero */}
-      <View style={styles.hero}>
-        <Text style={styles.heroIcon}>✨</Text>
-        <Text style={styles.heroTitle}>Passez en Premium</Text>
-        <Text style={styles.heroSubtitle}>
-          Gérez tous vos biens sans limite et gardez un historique complet.
-        </Text>
-      </View>
-
-      {/* Features */}
-      <View style={styles.featuresCard}>
-        {FEATURES.map((f, i) => (
-          <View
-            key={f.label}
-            style={[styles.featureRow, i < FEATURES.length - 1 && styles.featureRowBorder]}
-          >
-            <Text style={styles.featureIcon}>{f.icon}</Text>
-            <View style={styles.featureInfo}>
-              <Text style={styles.featureLabel}>{f.label}</Text>
-              <Text style={styles.featureSub}>{f.sub}</Text>
-            </View>
-            <Text style={styles.featureCheck}>✓</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* ── ANNUEL ── */}
-      {annualPkg && (
-        <View style={[styles.tierCard, styles.tierCardFeatured]}>
-          <View style={styles.tierHeader}>
-            <Text style={styles.tierTitle}>Annuel</Text>
-            <View style={styles.tierBadgeFeatured}>
-              <Text style={styles.tierBadgeFeaturedText}>
-                {savingsPercent != null ? `Économise ${savingsPercent}%` : 'Le plus populaire'}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.tierPrice}>{annualPkg.product.priceString}</Text>
-          <Text style={styles.tierPeriod}>par an</Text>
-          <TouchableOpacity
-            style={[styles.ctaButton, styles.ctaButtonFeatured, isAnyPurchasing && styles.ctaButtonDisabled]}
-            onPress={() => handlePurchase(annualPkg)}
-            disabled={isAnyPurchasing}
-          >
-            {purchasing === annualPkg.identifier ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.ctaButtonText}>
-                {"S'abonner · "}{annualPkg.product.priceString}/an
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── MENSUEL ── */}
-      {monthlyPkg && (
-        <View style={styles.tierCard}>
-          <View style={styles.tierHeader}>
-            <Text style={styles.tierTitle}>Mensuel</Text>
-            {trialMonthly && (
-              <View style={styles.tierBadge}>
-                <Text style={styles.tierBadgeText}>7 jours gratuits</Text>
-              </View>
-            )}
-          </View>
-          <Text style={styles.tierPrice}>{monthlyPkg.product.priceString}</Text>
-          <Text style={styles.tierPeriod}>par mois</Text>
-          <TouchableOpacity
-            style={[styles.ctaButton, isAnyPurchasing && styles.ctaButtonDisabled]}
-            onPress={() => handlePurchase(monthlyPkg)}
-            disabled={isAnyPurchasing}
-          >
-            {purchasing === monthlyPkg.identifier ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.ctaButtonText}>
-                {trialMonthly
-                  ? "Commencer l'essai gratuit"
-                  : `S'abonner · ${monthlyPkg.product.priceString}/mois`}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── À VIE ── */}
-      {lifetimePkg && (
-        <View style={[styles.tierCard, styles.tierCardAccent]}>
-          <View style={styles.tierHeader}>
-            <Text style={styles.tierTitle}>À vie</Text>
-            <View style={styles.tierBadgeAccent}>
-              <Text style={styles.tierBadgeAccentText}>Sans renouvellement</Text>
-            </View>
-          </View>
-          <Text style={styles.tierPrice}>{lifetimePkg.product.priceString}</Text>
-          <Text style={styles.tierPeriod}>paiement unique</Text>
-          <TouchableOpacity
-            style={[styles.ctaButton, styles.ctaButtonAccent, isAnyPurchasing && styles.ctaButtonDisabled]}
-            onPress={() => handlePurchase(lifetimePkg)}
-            disabled={isAnyPurchasing}
-          >
-            {purchasing === lifetimePkg.identifier ? (
-              <ActivityIndicator color={colors.white} />
-            ) : (
-              <Text style={styles.ctaButtonText}>
-                {'Acheter à vie · '}{lifetimePkg.product.priceString}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Aucun package dispo */}
-      {!annualPkg && !monthlyPkg && !lifetimePkg && (
-        <View style={styles.unavailableCard}>
-          <ActivityIndicator color={colors.primary} />
-          <Text style={styles.unavailableText}>
-            Les offres se chargent…{'\n'}Vérifiez votre connexion si elles n'apparaissent pas.
-          </Text>
-        </View>
-      )}
-
-      {/* Restore */}
-      <TouchableOpacity
-        style={styles.restoreButton}
-        onPress={handleRestore}
-        disabled={isAnyPurchasing}
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Screen
+        contentContainerStyle={{
+          paddingHorizontal: SPACING.lg,
+          paddingBottom: 130,
+        }}
       >
-        <Text style={styles.restoreButtonText}>Restaurer un achat</Text>
-      </TouchableOpacity>
+        {/* HERO */}
+        <View
+          style={{
+            paddingTop: SPACING.lg,
+            paddingBottom: SPACING.xl,
+            alignItems: 'flex-start',
+          }}
+        >
+          <View
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: RADIUS.full,
+              backgroundColor: COLORS.accentMuted,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: SPACING.lg,
+            }}
+          >
+            <Sparkles
+              size={24}
+              color={COLORS.accentDark}
+              strokeWidth={1.5}
+            />
+          </View>
+          <StyledText variant="eyebrow" color={COLORS.accentDark}>
+            HOMELOG PREMIUM
+          </StyledText>
+          <Separator
+            variant="accent"
+            width={32}
+            style={{ marginTop: SPACING.sm, marginBottom: SPACING.md }}
+          />
+          <StyledText
+            variant="h1"
+            style={{ fontSize: 32, lineHeight: 38 }}
+          >
+            Débloquez Homelog{'\n'}sans limites.
+          </StyledText>
+          <StyledText
+            variant="body"
+            color={COLORS.textSecondary}
+            style={{ marginTop: SPACING.md, fontSize: 16, lineHeight: 24 }}
+          >
+            Gérez tous vos biens, exportez vos données,
+            et profitez de l'IA de scan sans restriction.
+          </StyledText>
+        </View>
 
-      {/* Legal */}
-      <Text style={styles.legal}>
-        Les abonnements se renouvellent automatiquement. Annulable à tout moment depuis les réglages de l'App Store. Sans renouvellement pour l'offre à vie.
-      </Text>
+        {/* FEATURES */}
+        <Card
+          variant="outlined"
+          padding="none"
+          radius="md"
+          style={{ marginBottom: SPACING.xl, overflow: 'hidden' }}
+        >
+          {FEATURES.map((f, i) => {
+            const Icon = f.icon;
+            const isLast = i === FEATURES.length - 1;
+            return (
+              <View
+                key={f.label}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: SPACING.md,
+                  paddingHorizontal: SPACING.base,
+                  gap: SPACING.md,
+                  borderBottomWidth: isLast ? 0 : 0.5,
+                  borderBottomColor: COLORS.border,
+                }}
+              >
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: RADIUS.sm,
+                    backgroundColor: COLORS.primaryMuted,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon
+                    size={18}
+                    color={COLORS.primary}
+                    strokeWidth={1.75}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <StyledText variant="bodyMedium">{f.label}</StyledText>
+                  <StyledText
+                    variant="small"
+                    color={COLORS.textSecondary}
+                    style={{ marginTop: 2 }}
+                  >
+                    {f.description}
+                  </StyledText>
+                </View>
+                <Check
+                  size={16}
+                  color={COLORS.accentDark}
+                  strokeWidth={2.5}
+                />
+              </View>
+            );
+          })}
+        </Card>
 
-      {/* Skip */}
-      <TouchableOpacity onPress={() => router.back()}>
-        <Text style={styles.skipText}>Continuer sans Premium</Text>
-      </TouchableOpacity>
+        {/* TIERS */}
+        {noPackages ? (
+          <View
+            style={{
+              padding: SPACING.xl,
+              alignItems: 'center',
+              gap: SPACING.md,
+            }}
+          >
+            <ActivityIndicator color={COLORS.primary} />
+            <StyledText
+              variant="small"
+              color={COLORS.textSecondary}
+              align="center"
+            >
+              Chargement des offres…{'\n'}
+              Vérifiez votre connexion si elles n'apparaissent pas.
+            </StyledText>
+          </View>
+        ) : (
+          <View style={{ gap: SPACING.md, marginBottom: SPACING.xl }}>
+            {/* ANNUAL */}
+            {annualPkg && (
+              <TierCard
+                title="Annuel"
+                price={annualPkg.product.priceString}
+                period="par an"
+                badge={
+                  savingsPercent != null
+                    ? `Économise ${savingsPercent}%`
+                    : 'Le plus populaire'
+                }
+                badgeKind="featured"
+                selected={selected === 'annual'}
+                onPress={() => setSelected('annual')}
+              />
+            )}
+            {/* MONTHLY */}
+            {monthlyPkg && (
+              <TierCard
+                title="Mensuel"
+                price={monthlyPkg.product.priceString}
+                period="par mois"
+                badge={trialMonthly ? '7 jours gratuits' : undefined}
+                badgeKind="neutral"
+                selected={selected === 'monthly'}
+                onPress={() => setSelected('monthly')}
+              />
+            )}
+            {/* LIFETIME */}
+            {lifetimePkg && (
+              <TierCard
+                title="À vie"
+                price={lifetimePkg.product.priceString}
+                period="paiement unique"
+                badge="Sans renouvellement"
+                badgeKind="accent"
+                selected={selected === 'lifetime'}
+                onPress={() => setSelected('lifetime')}
+              />
+            )}
+          </View>
+        )}
 
-    </ScrollView>
+        {/* RESTORE */}
+        <Pressable
+          onPress={handleRestore}
+          disabled={isLoadingPurchase}
+          hitSlop={8}
+          style={({ pressed }) => [
+            {
+              alignSelf: 'center',
+              paddingVertical: SPACING.sm,
+              paddingHorizontal: SPACING.md,
+            },
+            pressed && { opacity: 0.6 },
+          ]}
+        >
+          <StyledText
+            variant="smallMedium"
+            color={COLORS.textSecondary}
+            style={{ textDecorationLine: 'underline' }}
+          >
+            Restaurer mes achats
+          </StyledText>
+        </Pressable>
+
+        {/* LEGAL */}
+        <StyledText
+          variant="caption"
+          color={COLORS.textTertiary}
+          align="center"
+          style={{
+            marginTop: SPACING.lg,
+            marginHorizontal: SPACING.md,
+            lineHeight: 16,
+          }}
+        >
+          Les abonnements se renouvellent automatiquement et peuvent être
+          annulés à tout moment depuis les réglages App Store. L'offre à
+          vie est un paiement unique sans renouvellement.
+        </StyledText>
+      </Screen>
+
+      {/* STICKY CTA */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.md,
+          paddingBottom: SPACING.lg,
+          backgroundColor: COLORS.background,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+        }}
+      >
+        <Pressable
+          onPress={handlePurchase}
+          disabled={!selectedPkg || purchasing !== null}
+          style={({ pressed }) => [
+            {
+              backgroundColor:
+                !selectedPkg || purchasing !== null
+                  ? COLORS.borderStrong
+                  : COLORS.primary,
+              borderRadius: RADIUS.md,
+              paddingVertical: SPACING.md,
+              alignItems: 'center',
+              ...SHADOWS.sm,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          {purchasing !== null ? (
+            <ActivityIndicator color={COLORS.textInverse} />
+          ) : (
+            <StyledText variant="title" color={COLORS.textInverse}>
+              {ctaLabel}
+            </StyledText>
+          )}
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, paddingBottom: 60, alignItems: 'center' },
+// ─── TIER CARD ────────────────────────────────────────────────────────────
 
-  // Hero
-  hero: { alignItems: 'center', marginBottom: spacing.xl },
-  heroIcon: { fontSize: 56, marginBottom: spacing.md },
-  heroTitle: {
-    fontSize: fontSize.xxxl,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
-  },
-  heroSubtitle: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+interface TierCardProps {
+  title: string;
+  price: string;
+  period: string;
+  badge?: string;
+  badgeKind: 'featured' | 'accent' | 'neutral';
+  selected: boolean;
+  onPress: () => void;
+}
 
-  // Features
-  featuresCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    width: '100%',
-    marginBottom: spacing.lg,
-    overflow: 'hidden',
-    ...shadow.sm,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  featureRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  featureIcon: { fontSize: 24, width: 32, textAlign: 'center' },
-  featureInfo: { flex: 1 },
-  featureLabel: { fontSize: fontSize.md, fontWeight: fontWeight.medium, color: colors.text },
-  featureSub: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  featureCheck: { fontSize: fontSize.md, color: colors.primary, fontWeight: fontWeight.bold },
+function TierCard({
+  title,
+  price,
+  period,
+  badge,
+  badgeKind,
+  selected,
+  onPress,
+}: TierCardProps) {
+  const badgeBg =
+    badgeKind === 'featured'
+      ? COLORS.primary
+      : badgeKind === 'accent'
+      ? COLORS.accentDark
+      : COLORS.surfaceAlt;
+  const badgeColor =
+    badgeKind === 'neutral' ? COLORS.textSecondary : COLORS.textInverse;
+  const borderColor = selected ? COLORS.primary : COLORS.border;
 
-  // Tier cards
-  tierCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    width: '100%',
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    ...shadow.sm,
-  },
-  tierCardFeatured: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  tierCardAccent: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentLight,
-  },
-  tierHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-  },
-  tierTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-  },
-
-  // Badges
-  tierBadgeFeatured: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  tierBadgeFeaturedText: {
-    color: colors.white,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-  },
-  tierBadge: {
-    backgroundColor: colors.primary + '20',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  tierBadgeText: {
-    color: colors.primary,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
-  tierBadgeAccent: {
-    backgroundColor: colors.accent + '20',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-  },
-  tierBadgeAccentText: {
-    color: colors.accent,
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.semibold,
-  },
-
-  // Pricing within card
-  tierPrice: {
-    fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-    marginTop: spacing.sm,
-  },
-  tierPeriod: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.md,
-  },
-
-  // CTA buttons
-  ctaButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  ctaButtonFeatured: {
-    backgroundColor: colors.primary,
-    ...shadow.md,
-  },
-  ctaButtonAccent: {
-    backgroundColor: colors.accent,
-  },
-  ctaButtonDisabled: { opacity: 0.5 },
-  ctaButtonText: {
-    color: colors.white,
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
-  },
-
-  // Unavailable state
-  unavailableCard: {
-    width: '100%',
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  unavailableText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  // Footer
-  restoreButton: { padding: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.sm },
-  restoreButtonText: { color: colors.textSecondary, fontSize: fontSize.sm },
-  legal: {
-    fontSize: fontSize.xs,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-    lineHeight: 16,
-  },
-  skipText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    textDecorationLine: 'underline',
-    marginTop: spacing.sm,
-  },
-});
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          backgroundColor: COLORS.surface,
+          borderWidth: 1.5,
+          borderColor,
+          borderRadius: RADIUS.md,
+          padding: SPACING.base,
+          ...SHADOWS.sm,
+        },
+        pressed && { opacity: 0.95 },
+      ]}
+    >
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: SPACING.xs,
+        }}
+      >
+        <StyledText variant="title">{title}</StyledText>
+        {badge && (
+          <View
+            style={{
+              paddingHorizontal: SPACING.sm,
+              paddingVertical: 3,
+              borderRadius: RADIUS.full,
+              backgroundColor: badgeBg,
+            }}
+          >
+            <StyledText
+              variant="caption"
+              color={badgeColor}
+              style={{
+                fontFamily: FONTS.sansSemiBold,
+                letterSpacing: 0.5,
+              }}
+            >
+              {badge}
+            </StyledText>
+          </View>
+        )}
+      </View>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'baseline',
+          gap: SPACING.xs,
+        }}
+      >
+        <StyledText variant="numericLarge">{price}</StyledText>
+        <StyledText variant="small" color={COLORS.textSecondary}>
+          {period}
+        </StyledText>
+      </View>
+      {selected && (
+        <View
+          style={{
+            position: 'absolute',
+            top: SPACING.sm,
+            right: SPACING.sm,
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: COLORS.primary,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Check
+            size={12}
+            color={COLORS.textInverse}
+            strokeWidth={3}
+          />
+        </View>
+      )}
+    </Pressable>
+  );
+}

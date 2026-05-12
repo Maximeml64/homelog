@@ -1,23 +1,24 @@
 // app/asset/add.tsx
 
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Alert, Pressable } from 'react-native';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Box, Camera } from 'lucide-react-native';
 import {
-  Alert,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+  Screen,
+  StyledText,
+  TextField,
+  SelectGrid,
+  FormSection,
+} from '../../components/ui';
+import { CATEGORY_ICON_MAP } from '../../components/ui/CategoryIcon';
 import { ExtraDataForm } from '../../components/ExtraDataForm';
+import { COLORS, RADIUS, SHADOWS, SPACING } from '../../constants/theme';
 import { ASSET_CATEGORIES } from '../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../constants/theme';
-import { useAppStore } from '../../src/stores/appStore';
 import { useAssetStore } from '../../src/stores/assetStore';
+import { useAppStore } from '../../src/stores/appStore';
 import { useScanPrefillStore } from '../../src/stores/scanPrefillStore';
-import { AssetCategoryId, AssetExtraData, ParsedInvoice } from '../../src/types';
+import type { AssetCategoryId, AssetExtraData, ParsedInvoice } from '../../src/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,12 @@ function buildConsolidatedNotes(prefill: ParsedInvoice): string {
   return parts.join('\n');
 }
 
+function clean(obj: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null),
+  );
+}
+
 function buildExtraData(
   categoryId: AssetCategoryId,
   prefill: ParsedInvoice,
@@ -55,7 +62,6 @@ function buildExtraData(
   const year = prefill.purchase_date
     ? parseInt(prefill.purchase_date.slice(0, 4), 10) || undefined
     : undefined;
-
   const base = { brand, model, serial_number: serial };
 
   switch (categoryId) {
@@ -88,17 +94,11 @@ function buildExtraData(
   }
 }
 
-function clean(obj: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null),
-  );
-}
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function AddAssetScreen() {
   const { addAsset, assetCount } = useAssetStore();
-  const { canAddAsset } = useAppStore();
+  const canAddAsset = useAppStore((s) => s.canAddAsset);
 
   const [prefill, setPrefill] = useState<ParsedInvoice | null>(null);
   const [categoryId, setCategoryId] = useState<AssetCategoryId | null>(null);
@@ -108,9 +108,8 @@ export default function AddAssetScreen() {
   const [notes, setNotes] = useState('');
   const [extraData, setExtraData] = useState<Record<string, any>>({});
   const [coverImageUri, setCoverImageUri] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // Consume pending prefill from scan-invoice screen on mount
   useEffect(() => {
     const pending = useScanPrefillStore.getState().consumePendingPrefill();
     if (!pending) return;
@@ -129,28 +128,29 @@ export default function AddAssetScreen() {
     }
   }, []);
 
-  function handleCategoryChange(id: AssetCategoryId) {
-    setCategoryId(id);
+  const handleCategoryChange = (cid: AssetCategoryId) => {
+    if (cid === categoryId) return;
+    setCategoryId(cid);
     if (prefill) {
-      setExtraData(buildExtraData(id, prefill));
+      setExtraData(buildExtraData(cid, prefill));
     } else {
       setExtraData({});
     }
-  }
+  };
 
-  function handleExtraDataChange(key: string, value: any) {
-    setExtraData(prev => {
+  const handleExtraDataChange = (key: string, value: any) => {
+    setExtraData((prev) => {
       const next = { ...prev };
-      if (value === undefined || value === '') {
+      if (value === undefined || value === null || value === '') {
         delete next[key];
       } else {
         next[key] = value;
       }
       return next;
     });
-  }
+  };
 
-  async function handleSave() {
+  const handleSubmit = async () => {
     if (!name.trim()) {
       Alert.alert('Erreur', 'Le nom est obligatoire');
       return;
@@ -163,229 +163,173 @@ export default function AddAssetScreen() {
       router.push('/paywall');
       return;
     }
-
-    setLoading(true);
+    setSaving(true);
     try {
       await addAsset({
         name: name.trim(),
         categoryId,
         location: location.trim() || undefined,
-        purchasePrice: purchasePrice ? parseFloat(purchasePrice) : undefined,
+        purchasePrice: purchasePrice.trim()
+          ? parseFloat(purchasePrice.replace(',', '.'))
+          : undefined,
         notes: notes.trim() || undefined,
-        extraData: Object.keys(extraData).length > 0 ? (extraData as AssetExtraData) : undefined,
+        extraData:
+          Object.keys(extraData).length > 0
+            ? (extraData as AssetExtraData)
+            : undefined,
         coverImageUri,
         archived: false,
       });
       router.back();
-    } catch {
+    } catch (e) {
       Alert.alert('Erreur', 'Impossible de sauvegarder');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  }
+  };
+
+  const categoryOptions = useMemo(
+    () =>
+      ASSET_CATEGORIES.map((c) => ({
+        id: c.id,
+        label: c.label,
+        icon: CATEGORY_ICON_MAP[c.id] ?? Box,
+      })),
+    [],
+  );
 
   return (
-    <KeyboardAwareScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      enableOnAndroid
-      keyboardShouldPersistTaps="handled"
-    >
-      {/* Scan banner — hidden once a prefill is active */}
-      {!prefill && (
-        <TouchableOpacity
-          style={styles.scanBanner}
-          onPress={() => router.push('/asset/scan-invoice')}
-          activeOpacity={0.75}
-          accessibilityRole="button"
-          accessibilityLabel="Scanner une facture pour pré-remplir"
-        >
-          <Text style={styles.scanBannerIcon}>📷</Text>
-          <View style={styles.scanBannerBody}>
-            <Text style={styles.scanBannerTitle}>
-              Scanner une facture pour pré-remplir
-            </Text>
-            <Text style={styles.scanBannerSub}>Gagne du temps, pré-remplissage automatique</Text>
-          </View>
-          <Text style={styles.scanBannerChevron}>›</Text>
-        </TouchableOpacity>
-      )}
-
-      {prefill && (
-        <View style={styles.prefillBadge}>
-          <Text style={styles.prefillBadgeText}>✅ Pré-rempli depuis la facture scannée</Text>
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Screen contentContainerStyle={{ paddingHorizontal: SPACING.lg, paddingBottom: 100 }}>
+        {/* HEADER */}
+        <View style={{ paddingTop: SPACING.lg, paddingBottom: SPACING.xl }}>
+          <StyledText variant="eyebrow">NOUVEAU BIEN</StyledText>
+          <StyledText variant="h2" style={{ marginTop: SPACING.xs }}>
+            Ajouter un bien
+          </StyledText>
         </View>
-      )}
 
-      <Text style={styles.sectionLabel}>Catégorie *</Text>
-      <View style={styles.categoryGrid}>
-        {ASSET_CATEGORIES.map(cat => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[styles.categoryChip, categoryId === cat.id && styles.categoryChipActive]}
-            onPress={() => handleCategoryChange(cat.id)}
+        {/* SCAN PREFILL BANNER */}
+        {prefill && (
+          <View
+            style={{
+              marginBottom: SPACING.xl,
+              padding: SPACING.base,
+              borderRadius: RADIUS.md,
+              backgroundColor: COLORS.accentMuted,
+              borderLeftWidth: 3,
+              borderLeftColor: COLORS.accent,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: SPACING.md,
+            }}
           >
-            <Text style={styles.categoryIcon}>{cat.icon}</Text>
-            <Text style={[styles.categoryLabel, categoryId === cat.id && styles.categoryLabelActive]}>
-              {cat.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+            <Camera size={20} color={COLORS.accentDark} strokeWidth={2} />
+            <View style={{ flex: 1 }}>
+              <StyledText variant="eyebrow" color={COLORS.accentDark}>
+                PRÉ-REMPLI DEPUIS VOTRE FACTURE
+              </StyledText>
+              <StyledText variant="small" style={{ marginTop: 2 }}>
+                Vérifiez les informations et complétez si besoin.
+              </StyledText>
+            </View>
+          </View>
+        )}
 
-      <Text style={styles.sectionLabel}>Nom *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ex: Peugeot 3008, Chaudière salon..."
-        placeholderTextColor={colors.textTertiary}
-        value={name}
-        onChangeText={setName}
-      />
+        {/* CATÉGORIE */}
+        <FormSection>
+          <SelectGrid
+            label="CATÉGORIE"
+            required
+            options={categoryOptions}
+            selectedId={categoryId}
+            onSelect={(id) => handleCategoryChange(id as AssetCategoryId)}
+            columns={3}
+          />
+        </FormSection>
 
-      {categoryId && (
-        <ExtraDataForm
-          categoryId={categoryId}
-          values={extraData}
-          onChange={handleExtraDataChange}
-        />
-      )}
+        {/* INFORMATIONS */}
+        <FormSection title="INFORMATIONS">
+          <TextField
+            label="NOM"
+            required
+            value={name}
+            onChangeText={setName}
+            placeholder="Ex: Voiture principale"
+          />
+          <TextField
+            label="LOCALISATION"
+            value={location}
+            onChangeText={setLocation}
+            placeholder="Ex: Garage, Cuisine…"
+          />
+          <TextField
+            label="PRIX D'ACHAT (€)"
+            value={purchasePrice}
+            onChangeText={setPurchasePrice}
+            placeholder="Ex: 1500"
+            keyboardType="decimal-pad"
+          />
+        </FormSection>
 
-      <Text style={styles.sectionLabel}>Localisation</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ex: Garage, Cuisine, Jardin..."
-        placeholderTextColor={colors.textTertiary}
-        value={location}
-        onChangeText={setLocation}
-      />
+        {/* EXTRA DATA */}
+        {categoryId && (
+          <FormSection title="DÉTAILS SPÉCIFIQUES">
+            <ExtraDataForm
+              categoryId={categoryId}
+              values={extraData}
+              onChange={handleExtraDataChange}
+            />
+          </FormSection>
+        )}
 
-      <Text style={styles.sectionLabel}>Prix d'achat (€)</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="0"
-        placeholderTextColor={colors.textTertiary}
-        value={purchasePrice}
-        onChangeText={setPurchasePrice}
-        keyboardType="numeric"
-      />
+        {/* NOTES */}
+        <FormSection title="NOTES">
+          <TextField
+            label="NOTES"
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="Notes libres…"
+            multiline
+            numberOfLines={4}
+          />
+        </FormSection>
+      </Screen>
 
-      <Text style={styles.sectionLabel}>Notes</Text>
-      <TextInput
-        style={[styles.input, styles.textarea]}
-        placeholder="Informations complémentaires..."
-        placeholderTextColor={colors.textTertiary}
-        value={notes}
-        onChangeText={setNotes}
-        multiline
-        numberOfLines={3}
-      />
-
-      <TouchableOpacity
-        style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-        onPress={handleSave}
-        disabled={loading}
+      {/* STICKY BOTTOM */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.md,
+          paddingBottom: SPACING.lg,
+          backgroundColor: COLORS.background,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+        }}
       >
-        <Text style={styles.saveButtonText}>
-          {loading ? 'Enregistrement...' : 'Enregistrer'}
-        </Text>
-      </TouchableOpacity>
-    </KeyboardAwareScrollView>
+        <Pressable
+          onPress={handleSubmit}
+          disabled={saving}
+          style={({ pressed }) => [
+            {
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.md,
+              paddingVertical: SPACING.md,
+              alignItems: 'center',
+              ...SHADOWS.sm,
+            },
+            (pressed || saving) && { opacity: 0.85 },
+          ]}
+        >
+          <StyledText variant="title" color={COLORS.textInverse}>
+            {saving ? 'Enregistrement…' : 'Enregistrer'}
+          </StyledText>
+        </Pressable>
+      </View>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: 60 },
-
-  // Scan banner
-  scanBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    borderStyle: 'dashed',
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryLight,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-    ...shadow.sm,
-  },
-  scanBannerIcon: { fontSize: 26 },
-  scanBannerBody: { flex: 1 },
-  scanBannerTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.primary,
-  },
-  scanBannerSub: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  scanBannerChevron: { fontSize: 22, color: colors.primary },
-
-  // Prefill badge
-  prefillBadge: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  prefillBadgeText: {
-    fontSize: fontSize.sm,
-    color: colors.primary,
-    fontWeight: fontWeight.medium,
-  },
-
-  sectionLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  categoryChip: {
-    alignItems: 'center',
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    width: '23%',
-  },
-  categoryChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  categoryIcon: { fontSize: 24, marginBottom: 4 },
-  categoryLabel: { fontSize: fontSize.xs, color: colors.textSecondary, textAlign: 'center' },
-  categoryLabelActive: { color: colors.primary, fontWeight: fontWeight.semibold },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: fontSize.md,
-    color: colors.text,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.xs,
-  },
-  textarea: { height: 80, textAlignVertical: 'top' },
-  saveButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  saveButtonDisabled: { opacity: 0.6 },
-  saveButtonText: { color: colors.white, fontWeight: fontWeight.bold, fontSize: fontSize.md },
-});

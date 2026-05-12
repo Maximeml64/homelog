@@ -1,244 +1,258 @@
-// app/(tabs)/reminders.tsx
-
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo } from 'react';
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { ASSET_CATEGORIES } from '../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../constants/theme';
+  Screen,
+  StyledText,
+  ReminderRow,
+  Card,
+} from '../../components/ui';
+import type { ReminderUrgency } from '../../components/ui';
+import { COLORS, RADIUS, SPACING, FONTS } from '../../constants/theme';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
-import { MaintenanceEvent } from '../../src/types';
+import { formatEUR } from '../../src/utils/format';
+import type { MaintenanceEvent } from '../../src/types';
 
-type ReminderGroup = {
+const MONTHS_SHORT = [
+  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+];
+
+interface ReminderGroup {
+  id: ReminderUrgency;
   label: string;
   color: string;
-  events: MaintenanceEvent[];
-};
+  mutedColor: string;
+  items: MaintenanceEvent[];
+}
 
-function groupReminders(events: MaintenanceEvent[]): ReminderGroup[] {
-  const today = new Date();
+function formatDueShort(iso: string, now: Date): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const base = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+  return sameYear ? base : `${base} ${d.getFullYear()}`;
+}
+
+function getCountdownText(iso: string, now: Date): string {
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
+  const due = new Date(iso);
+  due.setHours(0, 0, 0, 0);
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return `${Math.abs(days)} j de retard`;
+  if (days === 0) return "Aujourd'hui";
+  if (days === 1) return 'Demain';
+  return `Dans ${days} j`;
+}
 
-  const endOfWeek = new Date(today);
-  endOfWeek.setDate(today.getDate() + 7);
-
-  const endOfMonth = new Date(today);
-  endOfMonth.setDate(today.getDate() + 30);
-
-  const overdue: MaintenanceEvent[] = [];
-  const thisWeek: MaintenanceEvent[] = [];
-  const thisMonth: MaintenanceEvent[] = [];
-  const later: MaintenanceEvent[] = [];
-
-  for (const event of events) {
-    if (!event.nextDueDate) continue;
-    const [y, m, d] = event.nextDueDate.split('-').map(Number);
-    const due = new Date(y, m - 1, d);
-    due.setHours(0, 0, 0, 0);
-
-    if (due < today) overdue.push(event);
-    else if (due <= endOfWeek) thisWeek.push(event);
-    else if (due <= endOfMonth) thisMonth.push(event);
-    else later.push(event);
-  }
-
-  const groups: ReminderGroup[] = [];
-  if (overdue.length) groups.push({ label: '⚠️ En retard', color: colors.danger, events: overdue });
-  if (thisWeek.length) groups.push({ label: '📅 Cette semaine', color: colors.warning, events: thisWeek });
-  if (thisMonth.length) groups.push({ label: '🗓 Ce mois', color: colors.primary, events: thisMonth });
-  if (later.length) groups.push({ label: '⏳ Plus tard', color: colors.textSecondary, events: later });
-  return groups;
+function getUrgency(iso: string, now: Date): ReminderUrgency {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(iso);
+  due.setHours(0, 0, 0, 0);
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return 'overdue';
+  if (days <= 7) return 'soon';
+  if (days <= 30) return 'normal';
+  return 'later';
 }
 
 export default function RemindersScreen() {
-  const { fetchUpcomingReminders, upcomingReminders } = useEventStore();
-  const { assets } = useAssetStore();
+  const assets = useAssetStore((s) => s.assets);
+  const fetchAssets = useAssetStore((s) => s.fetchAssets);
+  const upcomingReminders = useEventStore((s) => s.upcomingReminders);
+  const fetchUpcomingReminders = useEventStore((s) => s.fetchUpcomingReminders);
+  const [refreshing, setRefreshing] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
+      fetchAssets();
       fetchUpcomingReminders();
-    }, [])
+    }, [fetchAssets, fetchUpcomingReminders]),
   );
 
-  const groups = useMemo(() => groupReminders(upcomingReminders), [upcomingReminders]);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchAssets(), fetchUpcomingReminders()]);
+    setRefreshing(false);
+  }, [fetchAssets, fetchUpcomingReminders]);
 
-  function getAsset(assetId: string) {
-    return assets.find(a => a.id === assetId);
-  }
+  const groups = useMemo<ReminderGroup[]>(() => {
+    const now = new Date();
+    const buckets: Record<ReminderUrgency, MaintenanceEvent[]> = {
+      overdue: [],
+      soon: [],
+      normal: [],
+      later: [],
+    };
 
-  function getCategoryIcon(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.icon ?? '📦';
-  }
+    [...upcomingReminders]
+      .filter((r) => r.nextDueDate)
+      .sort((a, b) =>
+        (a.nextDueDate ?? '').localeCompare(b.nextDueDate ?? ''),
+      )
+      .forEach((r) => {
+        const u = getUrgency(r.nextDueDate as string, now);
+        buckets[u].push(r);
+      });
 
-  function formatDueDate(isoDate: string): string {
-    const [y, m, d] = isoDate.split('-');
-    return `${d}/${m}/${y}`;
-  }
+    const list: ReminderGroup[] = [
+      {
+        id: 'overdue',
+        label: 'EN RETARD',
+        color: COLORS.danger,
+        mutedColor: COLORS.dangerMuted,
+        items: buckets.overdue,
+      },
+      {
+        id: 'soon',
+        label: 'CETTE SEMAINE',
+        color: COLORS.warning,
+        mutedColor: COLORS.warningMuted,
+        items: buckets.soon,
+      },
+      {
+        id: 'normal',
+        label: 'CE MOIS',
+        color: COLORS.primary,
+        mutedColor: COLORS.primaryMuted,
+        items: buckets.normal,
+      },
+      {
+        id: 'later',
+        label: 'PLUS TARD',
+        color: COLORS.textSecondary,
+        mutedColor: COLORS.surfaceAlt,
+        items: buckets.later,
+      },
+    ];
 
-  function getDueDelta(isoDate: string): string {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const [y, m, d] = isoDate.split('-').map(Number);
-    const due = new Date(y, m - 1, d);
-    due.setHours(0, 0, 0, 0);
-    const diff = Math.round((due.getTime() - today.getTime()) / 86400000);
-    if (diff < 0) return `${Math.abs(diff)}j de retard`;
-    if (diff === 0) return "Aujourd'hui";
-    if (diff === 1) return 'Demain';
-    return `Dans ${diff}j`;
-  }
+    return list.filter((g) => g.items.length > 0);
+  }, [upcomingReminders]);
 
-  function getDeltaColor(isoDate: string): string {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const [y, m, d] = isoDate.split('-').map(Number);
-    const due = new Date(y, m - 1, d);
-    const diff = Math.round((due.getTime() - today.getTime()) / 86400000);
-    if (diff < 0) return colors.danger;
-    if (diff <= 7) return colors.warning;
-    return colors.primary;
-  }
-
-  if (groups.length === 0) {
-    return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyIcon}>🔔</Text>
-        <Text style={styles.emptyTitle}>Aucun rappel</Text>
-        <Text style={styles.emptySubtitle}>
-          Les rappels apparaissent ici quand vous ajoutez un événement à venir sur un bien.
-        </Text>
-      </View>
-    );
-  }
+  const getAsset = (id: string) => assets.find((a) => a.id === id);
+  const now = new Date();
+  const totalCount = upcomingReminders.filter((r) => r.nextDueDate).length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {groups.map(group => (
-        <View key={group.label} style={styles.group}>
-          <View style={styles.groupHeader}>
-            <Text style={styles.groupLabel}>{group.label}</Text>
-            <View style={[styles.groupBadge, { backgroundColor: group.color + '20' }]}>
-              <Text style={[styles.groupBadgeText, { color: group.color }]}>
-                {group.events.length}
-              </Text>
+    <Screen
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={COLORS.primary}
+        />
+      }
+    >
+      {/* HEADER */}
+      <View
+        style={{
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.lg,
+          paddingBottom: SPACING.lg,
+        }}
+      >
+        <StyledText variant="eyebrow">RAPPELS</StyledText>
+        <StyledText variant="h2" style={{ marginTop: SPACING.xs }}>
+          Vos échéances
+        </StyledText>
+      </View>
+
+      {/* EMPTY STATE */}
+      {totalCount === 0 && (
+        <View
+          style={{
+            paddingHorizontal: SPACING.lg,
+            paddingVertical: SPACING.xxxl,
+            alignItems: 'center',
+          }}
+        >
+          <StyledText
+            variant="h3"
+            align="center"
+            style={{ marginBottom: SPACING.sm }}
+          >
+            Aucun rappel
+          </StyledText>
+          <StyledText variant="body" color={COLORS.textSecondary} align="center">
+            Ajoutez un événement avec une date d'échéance future pour voir vos rappels ici.
+          </StyledText>
+        </View>
+      )}
+
+      {/* GROUPS */}
+      {groups.map((group) => (
+        <View key={group.id} style={{ marginBottom: SPACING.xl }}>
+          {/* Section header */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: SPACING.sm,
+              paddingHorizontal: SPACING.lg,
+              marginBottom: SPACING.sm,
+            }}
+          >
+            <StyledText variant="eyebrow" color={group.color}>
+              {group.label}
+            </StyledText>
+            <View
+              style={{
+                paddingHorizontal: 6,
+                paddingVertical: 2,
+                borderRadius: RADIUS.full,
+                backgroundColor: group.mutedColor,
+                minWidth: 22,
+                alignItems: 'center',
+              }}
+            >
+              <StyledText
+                variant="caption"
+                color={group.color}
+                style={{ fontSize: 10, fontFamily: FONTS.sansBold }}
+              >
+                {group.items.length}
+              </StyledText>
             </View>
           </View>
 
-          {group.events.map(event => {
-            const asset = getAsset(event.assetId);
-            return (
-              <TouchableOpacity
-                key={event.id}
-                style={styles.card}
-                onPress={() => router.push(`/event/${event.id}`)}
-              >
-                {asset && (
-                  <View style={styles.cardCategoryIcon}>
-                    <Text style={styles.cardCategoryIconText}>
-                      {getCategoryIcon(asset.categoryId)}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.cardLeft}>
-                  <Text style={styles.cardTitle}>{event.title}</Text>
-                  <Text style={styles.cardAsset}>{asset?.name ?? '—'}</Text>
-                  {event.cost !== undefined && event.cost > 0 && (
-                    <Text style={styles.cardCost}>Coût estimé : {event.cost.toFixed(0)} €</Text>
-                  )}
-                </View>
-                <View style={styles.cardRight}>
-                  <Text style={[styles.cardDelta, { color: getDeltaColor(event.nextDueDate!) }]}>
-                    {getDueDelta(event.nextDueDate!)}
-                  </Text>
-                  <Text style={styles.cardDate}>{formatDueDate(event.nextDueDate!)}</Text>
-                  {event.reminderEnabled && (
-                    <Text style={styles.cardNotif}>🔔</Text>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+          {/* Card with reminders */}
+          <Card
+            variant="outlined"
+            padding="none"
+            radius="md"
+            style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+          >
+            {group.items.map((reminder, idx) => {
+              const asset = getAsset(reminder.assetId);
+              const dueIso = reminder.nextDueDate as string;
+              const countdownLabel = getCountdownText(dueIso, now);
+              const dueDateLabel = formatDueShort(dueIso, now);
+              const urgency = getUrgency(dueIso, now);
+              const costLabel =
+                reminder.cost !== undefined && reminder.cost > 0
+                  ? formatEUR(reminder.cost)
+                  : undefined;
+
+              return (
+                <ReminderRow
+                  key={reminder.id}
+                  title={reminder.title}
+                  assetName={asset?.name}
+                  categoryId={asset?.categoryId ?? 'other'}
+                  countdownLabel={countdownLabel}
+                  dueDateLabel={dueDateLabel}
+                  costLabel={costLabel}
+                  urgency={urgency}
+                  onPress={() => router.push(`/event/${reminder.id}`)}
+                  isLast={idx === group.items.length - 1}
+                />
+              );
+            })}
+          </Card>
         </View>
       ))}
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: 40 },
-  emptyContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  emptyIcon: { fontSize: 48, marginBottom: spacing.md },
-  emptyTitle: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  emptySubtitle: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  group: { marginBottom: spacing.lg },
-  groupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  groupLabel: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-  },
-  groupBadge: {
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-  },
-  groupBadgeText: {
-    fontSize: fontSize.xs,
-    fontWeight: fontWeight.bold,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  cardCategoryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
-  },
-  cardCategoryIconText: { fontSize: 18 },
-  cardLeft: { flex: 1 },
-  cardTitle: { fontSize: fontSize.md, fontWeight: fontWeight.medium, color: colors.text },
-  cardAsset: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  cardCost: { fontSize: fontSize.xs, color: colors.accent, marginTop: 2, fontWeight: fontWeight.medium },
-  cardRight: { alignItems: 'flex-end', gap: 2, marginLeft: spacing.sm },
-  cardDelta: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold },
-  cardDate: { fontSize: fontSize.xs, color: colors.textTertiary },
-  cardNotif: { fontSize: 12, marginTop: 2 },
-});

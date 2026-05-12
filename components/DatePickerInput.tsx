@@ -1,14 +1,15 @@
 // components/DatePickerInput.tsx
 // Version sans module natif - compatible Expo Go
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+import { Calendar } from 'lucide-react-native';
+import { COLORS, FONTS, RADIUS, SPACING } from '../constants/theme';
 
 interface Props {
   value: string; // ISO format YYYY-MM-DD ou vide
@@ -42,12 +43,15 @@ function displayToIso(display: string): string {
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
-export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', label }: Props) {
-  // État interne d'affichage — indépendant de la valeur ISO parent
+export function DatePickerInput({
+  value,
+  onChange,
+  placeholder = 'JJ/MM/AAAA',
+  label,
+}: Props) {
   const [display, setDisplay] = useState(() => isoToDisplay(value));
   const isInternalChange = useRef(false);
 
-  // Sync depuis le parent uniquement si changement externe (pas depuis notre propre onChange)
   useEffect(() => {
     if (!isInternalChange.current) {
       setDisplay(isoToDisplay(value));
@@ -62,9 +66,9 @@ export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', l
 
     if (formatted.length === 10) {
       const iso = displayToIso(formatted);
-      onChange(iso); // vide si date invalide, ISO si valide
+      onChange(iso);
     } else {
-      onChange(''); // date incomplète → on vide l'ISO
+      onChange('');
     }
   }
 
@@ -77,11 +81,11 @@ export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', l
           value={display}
           onChangeText={handleChange}
           placeholder={placeholder}
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={COLORS.textTertiary}
           keyboardType="numeric"
           maxLength={10}
         />
-        <Text style={styles.icon}>📅</Text>
+        <Calendar size={16} color={COLORS.textTertiary} strokeWidth={1.75} />
       </View>
     </View>
   );
@@ -89,27 +93,27 @@ export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', l
 
 const styles = StyleSheet.create({
   label: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+    marginTop: SPACING.md,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    ...shadow.sm,
+    paddingHorizontal: SPACING.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: SPACING.sm,
   },
   input: {
     flex: 1,
-    paddingVertical: 12,
-    fontSize: fontSize.md,
-    color: colors.text,
+    paddingVertical: 10,
+    fontFamily: FONTS.sans,
+    fontSize: 15,
+    color: COLORS.text,
   },
-  icon: { fontSize: 16 },
 });

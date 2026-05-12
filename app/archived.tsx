@@ -1,35 +1,41 @@
 // app/archived.tsx
 
+import React, { useCallback } from 'react';
+import { Alert, Pressable, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { Archive, RotateCcw, Trash2 } from 'lucide-react-native';
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { ASSET_CATEGORIES } from '../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+  Card,
+  CategoryIcon,
+  Screen,
+  StyledText,
+} from '../components/ui';
+import { COLORS, FONTS, RADIUS, SPACING } from '../constants/theme';
 import { useAssetStore } from '../src/stores/assetStore';
+import { getCategoryLabel } from '../src/utils/format';
+import type { Asset } from '../src/types';
+
+function getBrandModel(asset: Asset): string | null {
+  const data = asset.extraData as Record<string, any> | undefined;
+  const brand = data?.brand ?? asset.brand ?? null;
+  const model = data?.model ?? asset.model ?? null;
+  if (brand && model) return `${brand} · ${model}`;
+  return brand ?? model ?? null;
+}
 
 export default function ArchivedScreen() {
-  const { archivedAssets, fetchArchivedAssets, unarchiveAsset, removeAsset } = useAssetStore();
+  const {
+    archivedAssets,
+    fetchArchivedAssets,
+    unarchiveAsset,
+    removeAsset,
+  } = useAssetStore();
 
   useFocusEffect(
     useCallback(() => {
       fetchArchivedAssets();
-    }, [])
+    }, [fetchArchivedAssets]),
   );
-
-  function getCategoryIcon(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.icon ?? '📦';
-  }
-
-  function getCategoryLabel(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.label ?? categoryId;
-  }
 
   function handleUnarchive(id: string, name: string) {
     Alert.alert(
@@ -43,7 +49,7 @@ export default function ArchivedScreen() {
             await unarchiveAsset(id);
           },
         },
-      ]
+      ],
     );
   }
 
@@ -61,158 +67,209 @@ export default function ArchivedScreen() {
             await fetchArchivedAssets();
           },
         },
-      ]
+      ],
     );
-  }
-
-  function getExtraDataBrandModel(asset: any): string | null {
-    if (!asset.extraData) return null;
-    const data = asset.extraData as Record<string, any>;
-    const brand = data.brand ?? asset.brand ?? null;
-    const model = data.model ?? asset.model ?? null;
-    if (brand && model) return `${brand} · ${model}`;
-    if (brand) return brand;
-    if (model) return model;
-    return null;
   }
 
   if (archivedAssets.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyIcon}>📦</Text>
-        <Text style={styles.emptyTitle}>Aucun bien archivé</Text>
-        <Text style={styles.emptySubtitle}>
-          Les biens archivés apparaissent ici. Vous pouvez les désarchiver ou les supprimer définitivement.
-        </Text>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: SPACING.xl,
+        }}
+      >
+        <View
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: 32,
+            backgroundColor: COLORS.surfaceAlt,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: SPACING.lg,
+          }}
+        >
+          <Archive
+            size={28}
+            color={COLORS.textTertiary}
+            strokeWidth={1.5}
+          />
+        </View>
+        <StyledText variant="h3" align="center">
+          Aucun bien archivé
+        </StyledText>
+        <StyledText
+          variant="body"
+          color={COLORS.textSecondary}
+          align="center"
+          style={{ marginTop: SPACING.sm, maxWidth: 300 }}
+        >
+          Les biens archivés apparaissent ici.{'\n'}
+          Vous pouvez les restaurer ou les supprimer définitivement.
+        </StyledText>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.hint}>
-        {archivedAssets.length} bien{archivedAssets.length > 1 ? 's' : ''} archivé{archivedAssets.length > 1 ? 's' : ''}
-      </Text>
+    <Screen contentContainerStyle={{ paddingBottom: SPACING.xl }}>
+      <View
+        style={{
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.lg,
+          paddingBottom: SPACING.md,
+        }}
+      >
+        <StyledText variant="eyebrow">ARCHIVES</StyledText>
+        <StyledText variant="h2" style={{ marginTop: SPACING.xs }}>
+          {archivedAssets.length} bien
+          {archivedAssets.length > 1 ? 's archivés' : ' archivé'}
+        </StyledText>
+      </View>
 
-      {archivedAssets.map(asset => {
-        const brandModel = getExtraDataBrandModel(asset);
-        return (
-          <View key={asset.id} style={styles.card}>
-            <TouchableOpacity
-              style={styles.cardMain}
-              onPress={() => router.push(`/asset/${asset.id}`)}
+      <View
+        style={{
+          paddingHorizontal: SPACING.lg,
+          gap: SPACING.md,
+        }}
+      >
+        {archivedAssets.map((asset) => {
+          const brandModel = getBrandModel(asset);
+          return (
+            <Card
+              key={asset.id}
+              variant="outlined"
+              padding="none"
+              radius="md"
+              style={{ overflow: 'hidden' }}
             >
-              <View style={styles.cardIcon}>
-                <Text style={styles.cardIconText}>{getCategoryIcon(asset.categoryId)}</Text>
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardName}>{asset.name}</Text>
-                <Text style={styles.cardCategory}>{getCategoryLabel(asset.categoryId)}</Text>
-                {brandModel && (
-                  <Text style={styles.cardBrand}>{brandModel}</Text>
-                )}
-              </View>
-            </TouchableOpacity>
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                style={styles.unarchiveButton}
-                onPress={() => handleUnarchive(asset.id, asset.name)}
+              <Pressable
+                onPress={() => router.push(`/asset/${asset.id}`)}
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: SPACING.base,
+                    gap: SPACING.md,
+                  },
+                  pressed && { backgroundColor: COLORS.surfaceAlt },
+                ]}
               >
-                <Text style={styles.unarchiveButtonText}>Restaurer</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={() => handleDelete(asset.id, asset.name)}
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: RADIUS.sm,
+                    backgroundColor: COLORS.surfaceAlt,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <CategoryIcon
+                    categoryId={asset.categoryId}
+                    size={20}
+                    color={COLORS.textSecondary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View
+                    style={{
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: SPACING.sm,
+                      paddingVertical: 2,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: COLORS.surfaceAlt,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <StyledText
+                      variant="caption"
+                      color={COLORS.textTertiary}
+                      style={{
+                        fontFamily: FONTS.sansSemiBold,
+                        letterSpacing: 0.8,
+                      }}
+                    >
+                      ARCHIVÉ
+                    </StyledText>
+                  </View>
+                  <StyledText variant="bodyMedium" numberOfLines={1}>
+                    {asset.name}
+                  </StyledText>
+                  <StyledText
+                    variant="small"
+                    color={COLORS.textSecondary}
+                    numberOfLines={1}
+                  >
+                    {getCategoryLabel(asset.categoryId)}
+                    {brandModel ? ` · ${brandModel}` : ''}
+                  </StyledText>
+                </View>
+              </Pressable>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  borderTopWidth: 0.5,
+                  borderTopColor: COLORS.border,
+                }}
               >
-                <Text style={styles.deleteButtonText}>Supprimer</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        );
-      })}
-    </ScrollView>
+                <Pressable
+                  onPress={() => handleUnarchive(asset.id, asset.name)}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: SPACING.xs,
+                      paddingVertical: SPACING.sm + 2,
+                      borderRightWidth: 0.5,
+                      borderRightColor: COLORS.border,
+                    },
+                    pressed && { opacity: 0.5 },
+                  ]}
+                >
+                  <RotateCcw
+                    size={14}
+                    color={COLORS.primary}
+                    strokeWidth={2}
+                  />
+                  <StyledText variant="smallMedium" color={COLORS.primary}>
+                    Restaurer
+                  </StyledText>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleDelete(asset.id, asset.name)}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: SPACING.xs,
+                      paddingVertical: SPACING.sm + 2,
+                    },
+                    pressed && { opacity: 0.5 },
+                  ]}
+                >
+                  <Trash2
+                    size={14}
+                    color={COLORS.danger}
+                    strokeWidth={2}
+                  />
+                  <StyledText variant="smallMedium" color={COLORS.danger}>
+                    Supprimer
+                  </StyledText>
+                </Pressable>
+              </View>
+            </Card>
+          );
+        })}
+      </View>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: 40 },
-  emptyContainer: {
-    flex: 1,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  emptyIcon: { fontSize: 48, marginBottom: spacing.md },
-  emptyTitle: {
-    fontSize: fontSize.xl,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  emptySubtitle: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  hint: {
-    fontSize: fontSize.sm,
-    color: colors.textTertiary,
-    marginBottom: spacing.md,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-    overflow: 'hidden',
-    ...shadow.sm,
-  },
-  cardMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-  },
-  cardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  cardIconText: { fontSize: 22 },
-  cardInfo: { flex: 1 },
-  cardName: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text },
-  cardCategory: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  cardBrand: { fontSize: fontSize.sm, color: colors.textTertiary, marginTop: 2 },
-  cardActions: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  unarchiveButton: {
-    flex: 1,
-    padding: spacing.sm,
-    alignItems: 'center',
-    borderRightWidth: 1,
-    borderRightColor: colors.border,
-  },
-  unarchiveButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.primary,
-    fontWeight: fontWeight.medium,
-  },
-  deleteButton: {
-    flex: 1,
-    padding: spacing.sm,
-    alignItems: 'center',
-  },
-  deleteButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.danger,
-    fontWeight: fontWeight.medium,
-  },
-});

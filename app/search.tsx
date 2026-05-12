@@ -1,19 +1,25 @@
 // app/search.tsx
 
+import React, { useMemo, useState } from 'react';
+import { ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { Search as SearchIcon } from 'lucide-react-native';
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-} from 'react-native';
-import { ASSET_CATEGORIES, EVENT_TYPES } from '../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+  AssetListItem,
+  Card,
+  EventListItem,
+  SearchBar,
+  Separator,
+  StyledText,
+} from '../components/ui';
+import { COLORS, SPACING } from '../constants/theme';
 import { useAssetStore } from '../src/stores/assetStore';
 import { useEventStore } from '../src/stores/eventStore';
+import {
+  formatEUR,
+  formatShortDate,
+  getCategoryLabel,
+} from '../src/utils/format';
 
 export default function SearchScreen() {
   const { assets } = useAssetStore();
@@ -25,233 +31,219 @@ export default function SearchScreen() {
   const results = useMemo(() => {
     if (q.length < 2) return { assets: [], events: [] };
 
-    const matchedAssets = assets.filter(a => {
+    const matchedAssets = assets.filter((a) => {
       const data = a.extraData as Record<string, any> | undefined;
-      const brand = data?.brand ?? a.brand ?? '';
-      const model = data?.model ?? a.model ?? '';
+      const brand = (data?.brand ?? a.brand ?? '').toLowerCase();
+      const model = (data?.model ?? a.model ?? '').toLowerCase();
       return (
         a.name.toLowerCase().includes(q) ||
-        brand.toLowerCase().includes(q) ||
-        model.toLowerCase().includes(q) ||
+        brand.includes(q) ||
+        model.includes(q) ||
         (a.location ?? '').toLowerCase().includes(q) ||
         (a.notes ?? '').toLowerCase().includes(q)
       );
     });
 
-    const matchedEvents = events.filter(e =>
-      e.title.toLowerCase().includes(q) ||
-      (e.providerName ?? '').toLowerCase().includes(q) ||
-      (e.notes ?? '').toLowerCase().includes(q)
+    const matchedEvents = events.filter(
+      (e) =>
+        e.title.toLowerCase().includes(q) ||
+        (e.providerName ?? '').toLowerCase().includes(q) ||
+        (e.notes ?? '').toLowerCase().includes(q),
     );
 
     return { assets: matchedAssets, events: matchedEvents };
   }, [q, assets, events]);
 
-  function getCategoryIcon(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.icon ?? '📦';
-  }
-
-  function getCategoryLabel(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.label ?? categoryId;
-  }
-
-  function getEventIcon(type: string): string {
-    return EVENT_TYPES.find(t => t.id === type)?.icon ?? '📝';
-  }
-
-  function getEventTypeLabel(type: string): string {
-    return EVENT_TYPES.find(t => t.id === type)?.label ?? type;
-  }
-
-  function getAssetName(assetId: string): string {
-    return assets.find(a => a.id === assetId)?.name ?? '—';
-  }
-
-  function formatDate(iso: string): string {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  }
-
-  function highlight(text: string): string {
-    if (!q) return text;
-    const idx = text.toLowerCase().indexOf(q);
-    if (idx === -1) return text;
-    return (
-      text.slice(0, idx) +
-      `<mark>${text.slice(idx, idx + q.length)}</mark>` +
-      text.slice(idx + q.length)
-    );
-  }
-
-  const hasResults = results.assets.length > 0 || results.events.length > 0;
+  const hasResults =
+    results.assets.length > 0 || results.events.length > 0;
   const showEmpty = q.length >= 2 && !hasResults;
+  const showHint = q.length < 2;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <View style={{ paddingHorizontal: SPACING.lg, paddingTop: SPACING.md }}>
+        <SearchBar
           value={query}
           onChangeText={setQuery}
-          placeholder="Rechercher un bien, événement, prestataire…"
-          placeholderTextColor={colors.textTertiary}
-          autoFocus
-          returnKeyType="search"
-          clearButtonMode="while-editing"
+          placeholder="Bien, événement, prestataire…"
         />
       </View>
 
-      {q.length < 2 && (
-        <View style={styles.hintContainer}>
-          <Text style={styles.hintText}>Saisissez au moins 2 caractères</Text>
+      {showHint && (
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: SPACING.xl,
+          }}
+        >
+          <View
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: COLORS.surfaceAlt,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: SPACING.md,
+            }}
+          >
+            <SearchIcon
+              size={20}
+              color={COLORS.textTertiary}
+              strokeWidth={1.5}
+            />
+          </View>
+          <StyledText
+            variant="body"
+            color={COLORS.textSecondary}
+            align="center"
+          >
+            Saisissez au moins 2 caractères{'\n'}pour lancer la recherche.
+          </StyledText>
         </View>
       )}
 
       {showEmpty && (
-        <View style={styles.hintContainer}>
-          <Text style={styles.emptyIcon}>🔍</Text>
-          <Text style={styles.emptyTitle}>Aucun résultat</Text>
-          <Text style={styles.hintText}>pour « {query} »</Text>
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: SPACING.xl,
+          }}
+        >
+          <StyledText variant="eyebrow" color={COLORS.textTertiary}>
+            AUCUN RÉSULTAT
+          </StyledText>
+          <StyledText
+            variant="h3"
+            align="center"
+            style={{ marginTop: SPACING.sm }}
+          >
+            Rien trouvé
+          </StyledText>
+          <StyledText
+            variant="body"
+            color={COLORS.textSecondary}
+            align="center"
+            style={{ marginTop: SPACING.xs }}
+          >
+            pour « {query} »
+          </StyledText>
         </View>
       )}
 
-      <ScrollView style={styles.results} contentContainerStyle={styles.resultsContent} keyboardShouldPersistTaps="handled">
-
-        {results.assets.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Biens · {results.assets.length}
-            </Text>
-            {results.assets.map(asset => {
-              const data = asset.extraData as Record<string, any> | undefined;
-              const brand = data?.brand ?? asset.brand ?? null;
-              const model = data?.model ?? asset.model ?? null;
-              const brandModel = brand && model ? `${brand} · ${model}` : (brand ?? model ?? null);
-              return (
-                <TouchableOpacity
-                  key={asset.id}
-                  style={styles.card}
-                  onPress={() => router.push(`/asset/${asset.id}`)}
-                >
-                  <View style={styles.cardIcon}>
-                    <Text style={styles.cardIconText}>{getCategoryIcon(asset.categoryId)}</Text>
-                  </View>
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.cardTitle}>{asset.name}</Text>
-                    <Text style={styles.cardSub}>{getCategoryLabel(asset.categoryId)}</Text>
-                    {brandModel && <Text style={styles.cardMeta}>{brandModel}</Text>}
-                    {asset.location && <Text style={styles.cardMeta}>📍 {asset.location}</Text>}
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {results.events.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              Événements · {results.events.length}
-            </Text>
-            {results.events.map(event => (
-              <TouchableOpacity
-                key={event.id}
-                style={styles.card}
-                onPress={() => router.push(`/event/${event.id}`)}
+      {hasResults && (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: SPACING.xxl }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+        >
+          {results.assets.length > 0 && (
+            <View style={{ marginTop: SPACING.lg }}>
+              <View
+                style={{
+                  paddingHorizontal: SPACING.lg,
+                  marginBottom: SPACING.sm,
+                }}
               >
-                <View style={styles.cardIcon}>
-                  <Text style={styles.cardIconText}>{getEventIcon(event.eventType)}</Text>
-                </View>
-                <View style={styles.cardInfo}>
-                  <Text style={styles.cardTitle}>{event.title}</Text>
-                  <Text style={styles.cardSub}>{getAssetName(event.assetId)}</Text>
-                  <Text style={styles.cardMeta}>
-                    {getEventTypeLabel(event.eventType)} · {formatDate(event.eventDate)}
-                    {event.cost !== undefined ? ` · ${event.cost.toFixed(0)} €` : ''}
-                  </Text>
-                  {event.providerName && (
-                    <Text style={styles.cardMeta}>🔧 {event.providerName}</Text>
-                  )}
-                </View>
-                <Text style={styles.chevron}>›</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+                <StyledText variant="eyebrow">
+                  BIENS · {results.assets.length}
+                </StyledText>
+              </View>
+              <Card
+                variant="outlined"
+                padding="none"
+                radius="md"
+                style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+              >
+                {results.assets.map((asset, idx) => {
+                  const data = asset.extraData as
+                    | Record<string, any>
+                    | undefined;
+                  const brand = data?.brand ?? asset.brand ?? null;
+                  const model = data?.model ?? asset.model ?? null;
+                  const brandModel =
+                    brand && model
+                      ? `${brand} · ${model}`
+                      : brand ?? model ?? undefined;
+                  return (
+                    <AssetListItem
+                      key={asset.id}
+                      imageUri={asset.coverImageUri}
+                      name={asset.name}
+                      category={getCategoryLabel(asset.categoryId)}
+                      categoryId={asset.categoryId}
+                      brandModel={brandModel ?? undefined}
+                      onPress={() => router.push(`/asset/${asset.id}`)}
+                      isLast={idx === results.assets.length - 1}
+                    />
+                  );
+                })}
+              </Card>
+            </View>
+          )}
+
+          {results.events.length > 0 && (
+            <View style={{ marginTop: SPACING.xl }}>
+              <View
+                style={{
+                  paddingHorizontal: SPACING.lg,
+                  marginBottom: SPACING.sm,
+                }}
+              >
+                <StyledText variant="eyebrow">
+                  ÉVÉNEMENTS · {results.events.length}
+                </StyledText>
+              </View>
+              <Card
+                variant="outlined"
+                padding="none"
+                radius="md"
+                style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+              >
+                {results.events.map((event, idx) => {
+                  const date = new Date(event.eventDate);
+                  const day = String(date.getDate());
+                  const assetName = assets.find(
+                    (a) => a.id === event.assetId,
+                  )?.name;
+                  return (
+                    <EventListItem
+                      key={event.id}
+                      day={day}
+                      title={event.title}
+                      assetName={
+                        assetName
+                          ? `${assetName} · ${formatShortDate(event.eventDate)}`
+                          : formatShortDate(event.eventDate)
+                      }
+                      costLabel={
+                        event.cost !== undefined && event.cost > 0
+                          ? formatEUR(event.cost)
+                          : undefined
+                      }
+                      eventType={event.eventType}
+                      onPress={() => router.push(`/event/${event.id}`)}
+                      isLast={idx === results.events.length - 1}
+                    />
+                  );
+                })}
+              </Card>
+            </View>
+          )}
+
+          <Separator
+            style={{
+              marginHorizontal: SPACING.lg,
+              marginTop: SPACING.xl,
+            }}
+          />
+        </ScrollView>
+      )}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    margin: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
-    ...shadow.sm,
-  },
-  searchIcon: { fontSize: 16, marginRight: spacing.sm },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    fontSize: fontSize.md,
-    color: colors.text,
-  },
-  hintContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-  },
-  hintText: { fontSize: fontSize.md, color: colors.textTertiary, textAlign: 'center' },
-  emptyIcon: { fontSize: 40, marginBottom: spacing.sm },
-  emptyTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  results: { flex: 1 },
-  resultsContent: { padding: spacing.md, paddingBottom: 40 },
-  section: { marginBottom: spacing.lg },
-  sectionTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  cardIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.sm,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  cardIconText: { fontSize: 20 },
-  cardInfo: { flex: 1 },
-  cardTitle: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text },
-  cardSub: { fontSize: fontSize.sm, color: colors.primary, marginTop: 2 },
-  cardMeta: { fontSize: fontSize.xs, color: colors.textTertiary, marginTop: 2 },
-  chevron: { fontSize: 20, color: colors.textTertiary },
-});

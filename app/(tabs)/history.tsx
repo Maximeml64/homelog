@@ -1,267 +1,241 @@
-// app/(tabs)/history.tsx
-
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, ScrollView, RefreshControl } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { ASSET_CATEGORIES, EVENT_TYPES } from '../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../constants/theme';
+  Screen,
+  StyledText,
+  Chip,
+  StatCard,
+  EventListItem,
+  Card,
+} from '../../components/ui';
+import { COLORS, SPACING } from '../../constants/theme';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
+import { formatEUR } from '../../src/utils/format';
+import type { MaintenanceEvent } from '../../src/types';
 
-const MONTH_LABELS = [
+const MONTHS_LONG = [
   'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre',
 ];
 
+function pluralize(n: number, singular: string, plural: string): string {
+  return `${n} ${n > 1 ? plural : singular}`;
+}
+
 export default function HistoryScreen() {
-  const { fetchAllEvents, events, getYearlyCost } = useEventStore();
-  const { assets } = useAssetStore();
+  const assets = useAssetStore((s) => s.assets);
+  const fetchAssets = useAssetStore((s) => s.fetchAssets);
+  const events = useEventStore((s) => s.events);
+  const fetchAllEvents = useEventStore((s) => s.fetchAllEvents);
+  const getYearlyCost = useEventStore((s) => s.getYearlyCost);
+
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [refreshing, setRefreshing] = useState(false);
   const [yearlyCost, setYearlyCost] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
+      fetchAssets();
       fetchAllEvents();
-    }, [])
+    }, [fetchAssets, fetchAllEvents]),
   );
 
   useEffect(() => {
-    getYearlyCost(selectedYear).then(setYearlyCost);
-  }, [selectedYear, events]);
+    let active = true;
+    (async () => {
+      const cost = await getYearlyCost(selectedYear);
+      if (active) setYearlyCost(cost);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [selectedYear, events.length, getYearlyCost]);
 
-  const years = useMemo(() => {
+  const availableYears = useMemo(() => {
     const set = new Set<number>();
     set.add(currentYear);
-    for (const e of events) {
-      const y = parseInt(e.eventDate.split('-')[0], 10);
-      if (!isNaN(y)) set.add(y);
-    }
+    events.forEach((e) => {
+      if (e.eventDate) {
+        const y = parseInt(e.eventDate.split('-')[0], 10);
+        if (!Number.isNaN(y)) set.add(y);
+      }
+    });
     return Array.from(set).sort((a, b) => b - a);
-  }, [events]);
+  }, [events, currentYear]);
 
   const eventsByMonth = useMemo(() => {
-    const filtered = events
-      .filter(e => e.eventDate.startsWith(String(selectedYear)))
-      .sort((a, b) => (a.eventDate < b.eventDate ? 1 : -1));
-
-    const map = new Map<number, typeof filtered>();
-    for (const e of filtered) {
-      const month = parseInt(e.eventDate.split('-')[1], 10) - 1;
-      if (!map.has(month)) map.set(month, []);
-      map.get(month)!.push(e);
-    }
-    return Array.from(map.entries()).sort((a, b) => b[0] - a[0]);
+    const filtered = events.filter((e) =>
+      e.eventDate?.startsWith(String(selectedYear)),
+    );
+    const grouped: Record<number, MaintenanceEvent[]> = {};
+    filtered.forEach((e) => {
+      const monthIdx = parseInt(e.eventDate.split('-')[1], 10) - 1;
+      if (!grouped[monthIdx]) grouped[monthIdx] = [];
+      grouped[monthIdx].push(e);
+    });
+    Object.keys(grouped).forEach((m) => {
+      grouped[Number(m)].sort((a, b) =>
+        a.eventDate < b.eventDate ? 1 : -1,
+      );
+    });
+    return Object.entries(grouped)
+      .map(([month, evts]) => ({ month: Number(month), events: evts }))
+      .sort((a, b) => b.month - a.month);
   }, [events, selectedYear]);
 
-  const totalEvents = eventsByMonth.reduce((s, [, evts]) => s + evts.length, 0);
+  const totalEvents = useMemo(
+    () => eventsByMonth.reduce((s, g) => s + g.events.length, 0),
+    [eventsByMonth],
+  );
 
-  function getAsset(assetId: string) {
-    return assets.find(a => a.id === assetId);
-  }
+  const activeMonths = eventsByMonth.length;
 
-  function getEventIcon(type: string): string {
-    return EVENT_TYPES.find(t => t.id === type)?.icon ?? '📝';
-  }
+  const getAssetName = (assetId: string) =>
+    assets.find((a) => a.id === assetId)?.name;
 
-  function getCategoryIcon(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.icon ?? '📦';
-  }
-
-  function formatDate(isoDate: string): string {
-    const [, , d] = isoDate.split('-');
-    return d;
-  }
-
-  function monthTotal(evts: typeof events): number {
-    return evts.reduce((s, e) => s + (e.cost ?? 0), 0);
-  }
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchAssets(), fetchAllEvents()]);
+    const cost = await getYearlyCost(selectedYear);
+    setYearlyCost(cost);
+    setRefreshing(false);
+  }, [fetchAssets, fetchAllEvents, getYearlyCost, selectedYear]);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <Screen
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={COLORS.primary}
+        />
+      }
+    >
+      {/* HEADER */}
+      <View
+        style={{
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.lg,
+          paddingBottom: SPACING.md,
+        }}
+      >
+        <StyledText variant="eyebrow">HISTORIQUE</StyledText>
+        <StyledText variant="h2" style={{ marginTop: SPACING.xs }}>
+          Vos événements
+        </StyledText>
+      </View>
 
-      {/* Sélecteur d'année */}
+      {/* YEAR FILTER */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.yearRow}
+        contentContainerStyle={{ paddingHorizontal: SPACING.lg, gap: SPACING.sm }}
+        style={{ marginBottom: SPACING.lg, flexGrow: 0 }}
       >
-        {years.map(year => (
-          <TouchableOpacity
-            key={year}
-            style={[styles.yearChip, selectedYear === year && styles.yearChipActive]}
-            onPress={() => setSelectedYear(year)}
-          >
-            <Text style={[styles.yearChipText, selectedYear === year && styles.yearChipTextActive]}>
-              {year}
-            </Text>
-          </TouchableOpacity>
+        {availableYears.map((y) => (
+          <Chip
+            key={y}
+            label={String(y)}
+            selected={y === selectedYear}
+            onPress={() => setSelectedYear(y)}
+          />
         ))}
       </ScrollView>
 
-      {/* Résumé annuel */}
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{yearlyCost.toFixed(0)} €</Text>
-          <Text style={styles.summaryLabel}>Dépensé en {selectedYear}</Text>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{totalEvents}</Text>
-          <Text style={styles.summaryLabel}>Événements</Text>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{eventsByMonth.length}</Text>
-          <Text style={styles.summaryLabel}>Mois actifs</Text>
-        </View>
+      {/* 3 STAT CARDS */}
+      <View
+        style={{
+          flexDirection: 'row',
+          paddingHorizontal: SPACING.lg,
+          gap: SPACING.sm,
+          marginBottom: SPACING.xl,
+        }}
+      >
+        <StatCard
+          label={`DÉPENSÉ ${selectedYear}`}
+          value={formatEUR(yearlyCost)}
+          accent
+        />
+        <StatCard label="ÉVÉNEMENTS" value={totalEvents} />
+        <StatCard label="MOIS ACTIFS" value={activeMonths} />
       </View>
 
+      {/* TIMELINE */}
       {eventsByMonth.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyText}>Aucun événement en {selectedYear}</Text>
+        <View
+          style={{
+            paddingHorizontal: SPACING.lg,
+            paddingVertical: SPACING.xxl,
+            alignItems: 'center',
+          }}
+        >
+          <StyledText variant="body" color={COLORS.textSecondary} align="center">
+            Aucun événement en {selectedYear}.
+          </StyledText>
         </View>
       ) : (
-        eventsByMonth.map(([monthIndex, evts]) => {
-          const total = monthTotal(evts);
+        eventsByMonth.map((monthGroup) => {
+          const monthEvents = monthGroup.events;
+          const monthTotal = monthEvents.reduce(
+            (s, e) => s + (e.cost ?? 0),
+            0,
+          );
           return (
-            <View key={monthIndex} style={styles.monthGroup}>
-              <View style={styles.monthHeader}>
-                <Text style={styles.monthLabel}>{MONTH_LABELS[monthIndex]}</Text>
-                <View style={styles.monthMeta}>
-                  <Text style={styles.monthCount}>{evts.length} événement{evts.length > 1 ? 's' : ''}</Text>
-                  {total > 0 && (
-                    <Text style={styles.monthCost}>{total.toFixed(0)} €</Text>
-                  )}
-                </View>
+            <View key={monthGroup.month} style={{ marginBottom: SPACING.xl }}>
+              {/* Month header */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'baseline',
+                  paddingHorizontal: SPACING.lg,
+                  marginBottom: SPACING.md,
+                }}
+              >
+                <StyledText variant="h3">
+                  {MONTHS_LONG[monthGroup.month]}
+                </StyledText>
+                <StyledText variant="eyebrow" color={COLORS.textTertiary}>
+                  {pluralize(monthEvents.length, 'événement', 'événements')}
+                  {monthTotal > 0 ? ` · ${formatEUR(monthTotal)}` : ''}
+                </StyledText>
               </View>
 
-              {evts.map(event => {
-                const asset = getAsset(event.assetId);
-                return (
-                  <TouchableOpacity
-                    key={event.id}
-                    style={styles.card}
-                    onPress={() => router.push(`/event/${event.id}`)}
-                  >
-                    <View style={styles.cardDateBox}>
-                      <Text style={styles.cardDay}>{formatDate(event.eventDate)}</Text>
-                    </View>
-                    <View style={styles.cardIcon}>
-                      <Text>{getEventIcon(event.eventType)}</Text>
-                    </View>
-                    <View style={styles.cardInfo}>
-                      <Text style={styles.cardTitle}>{event.title}</Text>
-                      <View style={styles.cardAssetRow}>
-                        {asset && (
-                          <Text style={styles.cardAssetIcon}>
-                            {getCategoryIcon(asset.categoryId)}
-                          </Text>
-                        )}
-                        <Text style={styles.cardAsset}>{asset?.name ?? '—'}</Text>
-                      </View>
-                    </View>
-                    {event.cost !== undefined && (
-                      <Text style={styles.cardCost}>{event.cost.toFixed(0)} €</Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
+              {/* Events list */}
+              <Card
+                variant="outlined"
+                padding="none"
+                radius="md"
+                style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+              >
+                {monthEvents.map((event, idx) => {
+                  const day = event.eventDate.split('-')[2] ?? '';
+                  const assetName = getAssetName(event.assetId);
+                  const costLabel =
+                    event.cost !== undefined && event.cost > 0
+                      ? formatEUR(event.cost)
+                      : undefined;
+                  return (
+                    <EventListItem
+                      key={event.id}
+                      day={day}
+                      title={event.title}
+                      assetName={assetName}
+                      costLabel={costLabel}
+                      eventType={event.eventType as string}
+                      onPress={() => router.push(`/event/${event.id}`)}
+                      isLast={idx === monthEvents.length - 1}
+                    />
+                  );
+                })}
+              </Card>
             </View>
           );
         })
       )}
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: 40 },
-  yearRow: { paddingBottom: spacing.md, gap: spacing.sm },
-  yearChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  yearChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  yearChipText: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: fontWeight.medium },
-  yearChipTextActive: { color: colors.white },
-  summaryCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    flexDirection: 'row',
-    ...shadow.sm,
-  },
-  summaryItem: { flex: 1, alignItems: 'center' },
-  summaryValue: { fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text },
-  summaryLabel: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2, textAlign: 'center' },
-  summaryDivider: { width: 1, backgroundColor: colors.border, marginVertical: spacing.xs },
-  empty: { alignItems: 'center', paddingVertical: spacing.xl },
-  emptyIcon: { fontSize: 40, marginBottom: spacing.sm },
-  emptyText: { color: colors.textSecondary, fontSize: fontSize.md },
-  monthGroup: { marginBottom: spacing.lg },
-  monthHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-    paddingBottom: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  monthLabel: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-  },
-  monthMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  monthCount: { fontSize: fontSize.xs, color: colors.textTertiary },
-  monthCost: { fontSize: fontSize.sm, fontWeight: fontWeight.semibold, color: colors.accent },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  cardDateBox: {
-    width: 28,
-    alignItems: 'center',
-    marginRight: spacing.sm,
-  },
-  cardDay: {
-    fontSize: fontSize.lg,
-    fontWeight: fontWeight.bold,
-    color: colors.textSecondary,
-  },
-  cardIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.sm,
-  },
-  cardInfo: { flex: 1 },
-  cardTitle: { fontSize: fontSize.md, fontWeight: fontWeight.medium, color: colors.text },
-  cardAssetRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  cardAssetIcon: { fontSize: 12 },
-  cardAsset: { fontSize: fontSize.sm, color: colors.primary },
-  cardCost: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.accent, marginLeft: spacing.sm },
-});

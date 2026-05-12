@@ -1,100 +1,104 @@
 // app/event/[id].tsx
 
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { View, Pressable, Alert, RefreshControl } from 'react-native';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+  ChevronRight,
+  Trash2,
+  Bell,
+  BellOff,
+} from 'lucide-react-native';
 import AttachmentsSection from '../../components/AttachmentsSection';
-import { ASSET_CATEGORIES, EVENT_TYPES } from '../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../constants/theme';
+import {
+  Screen,
+  StyledText,
+  Card,
+  InfoRow,
+  SettingsGroup,
+  SettingsItem,
+  CategoryIcon,
+} from '../../components/ui';
+import { COLORS, RADIUS, SPACING, SHADOWS, FONTS } from '../../constants/theme';
 import { getEventById } from '../../src/repositories/eventRepository';
 import { cancelReminder } from '../../src/services/notificationService';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
-import { Attachment, MaintenanceEvent } from '../../src/types';
+import {
+  formatEUR,
+  formatLongDate,
+  getCategoryLabel,
+} from '../../src/utils/format';
+import type { MaintenanceEvent, Attachment } from '../../src/types';
 
-function formatDisplayDate(iso: string): string {
-  if (iso.includes('-')) {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  }
-  return iso;
-}
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  maintenance: 'Entretien',
+  repair: 'Réparation',
+  inspection: 'Contrôle',
+  cleaning: 'Nettoyage',
+  replacement: 'Remplacement',
+  incident: 'Incident',
+  warranty: 'Garantie',
+  note: 'Note',
+};
 
-function getDateDelta(iso: string): string {
-  const today = new Date();
+function getCountdown(
+  iso: string,
+  now: Date,
+): { text: string; isOverdue: boolean; isToday: boolean } {
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setHours(0, 0, 0, 0);
-  const diff = Math.round((date.getTime() - today.getTime()) / 86400000);
-  if (diff === 0) return "Aujourd'hui";
-  if (diff === 1) return 'Demain';
-  if (diff === -1) return 'Hier';
-  if (diff > 0) return `Dans ${diff} jours`;
-  return `Il y a ${Math.abs(diff)} jours`;
-}
-
-function getDueDeltaColor(iso: string): string {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const [y, m, d] = iso.split('-').map(Number);
-  const date = new Date(y, m - 1, d);
-  const diff = Math.round((date.getTime() - today.getTime()) / 86400000);
-  if (diff < 0) return colors.danger;
-  if (diff <= 7) return colors.warning;
-  return colors.primary;
+  const due = new Date(iso);
+  due.setHours(0, 0, 0, 0);
+  const days = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (days < 0)
+    return { text: `${Math.abs(days)} j de retard`, isOverdue: true, isToday: false };
+  if (days === 0)
+    return { text: "Aujourd'hui", isOverdue: false, isToday: true };
+  if (days === 1) return { text: 'Demain', isOverdue: false, isToday: false };
+  return { text: `Dans ${days} jours`, isOverdue: false, isToday: false };
 }
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { assets } = useAssetStore();
-  const { removeEvent, fetchEventsByAsset } = useEventStore();
+  const assets = useAssetStore((s) => s.assets);
+  const removeEvent = useEventStore((s) => s.removeEvent);
+  const fetchEventsByAsset = useEventStore((s) => s.fetchEventsByAsset);
+
   const [event, setEvent] = useState<MaintenanceEvent | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadEvent = useCallback(async () => {
+    if (!id) return;
+    const e = await getEventById(id);
+    setEvent(e);
+    setAttachments(e?.attachments ?? []);
+  }, [id]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!id) return;
-      setLoading(true);
-      getEventById(id).then(e => {
-        setEvent(e);
-        setAttachments(e?.attachments ?? []);
-        setLoading(false);
-      });
-    }, [id])
+      let active = true;
+      (async () => {
+        setLoading(true);
+        await loadEvent();
+        if (active) setLoading(false);
+      })();
+      return () => {
+        active = false;
+      };
+    }, [loadEvent]),
   );
 
-  if (loading) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.secondaryText}>Chargement…</Text>
-      </View>
-    );
-  }
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadEvent();
+    setRefreshing(false);
+  }, [loadEvent]);
 
-  if (!event) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.secondaryText}>Événement introuvable</Text>
-      </View>
-    );
-  }
-
-  const asset = assets.find(a => a.id === event.assetId);
-  const eventTypeMeta = EVENT_TYPES.find(t => t.id === event.eventType);
-  const categoryIcon = asset
-    ? (ASSET_CATEGORIES.find(c => c.id === asset.categoryId)?.icon ?? '📦')
-    : '📦';
-
-  function handleDelete() {
+  const handleDelete = () => {
+    if (!event) return;
     Alert.alert(
       'Supprimer cet événement',
       'Cette action est irréversible.',
@@ -104,261 +108,384 @@ export default function EventDetailScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            if (event!.reminderNotifId) {
-              await cancelReminder(event!.reminderNotifId);
+            if (event.reminderNotifId) {
+              await cancelReminder(event.reminderNotifId);
             }
-            await removeEvent(event!.id);
-            if (event!.assetId) {
-              await fetchEventsByAsset(event!.assetId);
+            await removeEvent(event.id);
+            if (event.assetId) {
+              await fetchEventsByAsset(event.assetId);
             }
             router.back();
           },
         },
-      ]
+      ],
+    );
+  };
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <StyledText variant="body" color={COLORS.textSecondary}>
+          Chargement…
+        </StyledText>
+      </View>
     );
   }
 
+  if (!event) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: SPACING.lg,
+        }}
+      >
+        <StyledText
+          variant="h3"
+          align="center"
+          style={{ marginBottom: SPACING.sm }}
+        >
+          Événement introuvable
+        </StyledText>
+        <StyledText variant="body" color={COLORS.textSecondary} align="center">
+          Cet événement n'existe plus.
+        </StyledText>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            {
+              marginTop: SPACING.lg,
+              paddingHorizontal: SPACING.lg,
+              paddingVertical: SPACING.sm,
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.sm,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <StyledText variant="smallMedium" color={COLORS.textInverse}>
+            Retour
+          </StyledText>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const asset = assets.find((a) => a.id === event.assetId);
+  const typeLabel = EVENT_TYPE_LABELS[event.eventType as string] ?? 'Note';
+  const now = new Date();
+  const cd = getCountdown(event.eventDate, now);
+  const isUpcoming = event.status === 'upcoming';
+  const nextDueCd = event.nextDueDate
+    ? getCountdown(event.nextDueDate, now)
+    : undefined;
+  const nextDueColor = nextDueCd?.isOverdue
+    ? COLORS.danger
+    : nextDueCd?.isToday
+    ? COLORS.warning
+    : COLORS.accentDark;
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerIcon}>
-          <Text style={styles.headerIconText}>{eventTypeMeta?.icon ?? '📝'}</Text>
-        </View>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>{event.title}</Text>
-          <Text style={styles.headerType}>{eventTypeMeta?.label}</Text>
-          {asset && (
-            <TouchableOpacity
-              style={styles.headerAssetRow}
-              onPress={() => router.push(`/asset/${asset.id}`)}
-            >
-              <Text style={styles.headerAssetIcon}>{categoryIcon}</Text>
-              <Text style={styles.headerAsset}>{asset.name}</Text>
-              <Text style={styles.headerAssetChevron}>›</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        <View style={styles.headerRight}>
-          <View style={[
-            styles.statusBadge,
-            event.status === 'upcoming' ? styles.statusBadgeUpcoming : styles.statusBadgePast,
-          ]}>
-            <Text style={[
-              styles.statusBadgeText,
-              event.status === 'upcoming' ? styles.statusBadgeTextUpcoming : styles.statusBadgeTextPast,
-            ]}>
-              {event.status === 'upcoming' ? 'À venir' : 'Passé'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => router.push(`/event/edit/${event.id}`)}
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Screen
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        {/* HEADER INFO */}
+        <View
+          style={{
+            paddingHorizontal: SPACING.lg,
+            paddingTop: SPACING.lg,
+            paddingBottom: SPACING.md,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: SPACING.sm,
+              marginBottom: SPACING.xs,
+            }}
           >
-            <Text style={styles.editButtonText}>Modifier</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Infos clés */}
-      <View style={styles.infoCard}>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Date</Text>
-          <View style={styles.infoValueRow}>
-            <Text style={styles.infoValue}>{formatDisplayDate(event.eventDate)}</Text>
-            <Text style={styles.infoDelta}>{getDateDelta(event.eventDate)}</Text>
-          </View>
-        </View>
-        {event.cost !== undefined && (
-          <InfoRow label="Coût" value={`${event.cost.toFixed(2)} €`} highlight />
-        )}
-        {event.providerName && (
-          <InfoRow label="Prestataire" value={event.providerName} />
-        )}
-        {event.mileageAtEvent !== undefined && (
-          <InfoRow label="Kilométrage" value={`${event.mileageAtEvent.toLocaleString()} km`} />
-        )}
-      </View>
-
-      {/* Prochain entretien */}
-      {event.nextDueDate && (
-        <View style={styles.nextDueCard}>
-          <View style={styles.nextDueHeader}>
-            <Text style={styles.nextDueLabel}>Prochain entretien</Text>
-            {event.reminderEnabled && (
-              <View style={styles.reminderBadge}>
-                <Text style={styles.reminderBadgeText}>🔔 Rappel actif</Text>
+            <StyledText variant="eyebrow" color={COLORS.accentDark}>
+              {typeLabel.toUpperCase()}
+            </StyledText>
+            {isUpcoming && (
+              <View
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: COLORS.accentMuted,
+                }}
+              >
+                <StyledText
+                  variant="caption"
+                  color={COLORS.accentDark}
+                  style={{
+                    fontSize: 9,
+                    fontFamily: FONTS.sansBold,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  À VENIR
+                </StyledText>
               </View>
             )}
           </View>
-          <Text style={styles.nextDueDate}>{formatDisplayDate(event.nextDueDate)}</Text>
-          <Text style={[styles.nextDueDelta, { color: getDueDeltaColor(event.nextDueDate) }]}>
-            {getDateDelta(event.nextDueDate)}
-          </Text>
-          {event.nextDueMileage !== undefined && (
-            <Text style={styles.nextDueMileage}>
-              ou à {event.nextDueMileage.toLocaleString()} km
-            </Text>
-          )}
+          <StyledText variant="h1" style={{ fontSize: 28, lineHeight: 34 }}>
+            {event.title}
+          </StyledText>
         </View>
-      )}
 
-      {/* Notes */}
-      {event.notes && (
-        <View style={styles.notesCard}>
-          <Text style={styles.sectionTitle}>Notes</Text>
-          <Text style={styles.notesText}>{event.notes}</Text>
+        {/* ASSET LINK CARD */}
+        {asset && (
+          <Pressable
+            onPress={() => router.push(`/asset/${asset.id}`)}
+            style={({ pressed }) => [
+              { marginHorizontal: SPACING.lg, marginBottom: SPACING.xl },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <Card variant="outlined" padding="base" radius="md">
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: SPACING.md,
+                }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: RADIUS.sm,
+                    backgroundColor: COLORS.surfaceAlt,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <CategoryIcon
+                    categoryId={asset.categoryId}
+                    size={18}
+                    color={COLORS.textSecondary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <StyledText variant="eyebrow" style={{ fontSize: 10 }}>
+                    BIEN ASSOCIÉ
+                  </StyledText>
+                  <StyledText variant="bodyMedium" numberOfLines={1}>
+                    {asset.name}
+                  </StyledText>
+                  <StyledText variant="caption" color={COLORS.textTertiary}>
+                    {getCategoryLabel(asset.categoryId)}
+                  </StyledText>
+                </View>
+                <ChevronRight
+                  size={16}
+                  color={COLORS.textTertiary}
+                  strokeWidth={2}
+                />
+              </View>
+            </Card>
+          </Pressable>
+        )}
+
+        {/* DÉTAILS */}
+        <View style={{ marginBottom: SPACING.xl }}>
+          <StyledText
+            variant="eyebrow"
+            style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+          >
+            DÉTAILS
+          </StyledText>
+          <Card
+            variant="outlined"
+            padding="none"
+            radius="md"
+            style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+          >
+            <InfoRow
+              label="Date"
+              value={`${formatLongDate(event.eventDate)} · ${cd.text}`}
+            />
+            {event.cost !== undefined && event.cost > 0 && (
+              <InfoRow label="Coût" value={formatEUR(event.cost)} />
+            )}
+            {event.providerName && (
+              <InfoRow label="Prestataire" value={event.providerName} />
+            )}
+            {event.mileageAtEvent !== undefined && (
+              <InfoRow
+                label="Kilométrage"
+                value={`${event.mileageAtEvent.toLocaleString('fr-FR')} km`}
+                isLast
+              />
+            )}
+          </Card>
         </View>
-      )}
 
-      {/* Pièces jointes */}
-      <AttachmentsSection
-        attachments={attachments}
-        eventId={event.id}
-        onChanged={() => {
-          getEventById(event.id).then(e => {
-            setAttachments(e?.attachments ?? []);
-          });
+        {/* PROCHAIN ENTRETIEN */}
+        {event.nextDueDate && nextDueCd && (
+          <View style={{ marginBottom: SPACING.xl }}>
+            <StyledText
+              variant="eyebrow"
+              style={{
+                marginBottom: SPACING.sm,
+                paddingHorizontal: SPACING.lg,
+              }}
+            >
+              PROCHAIN ENTRETIEN
+            </StyledText>
+            <View
+              style={{
+                marginHorizontal: SPACING.lg,
+                padding: SPACING.base,
+                borderRadius: RADIUS.md,
+                backgroundColor: COLORS.accentMuted,
+                borderLeftWidth: 3,
+                borderLeftColor: COLORS.accent,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: SPACING.sm,
+                  marginBottom: SPACING.xs,
+                }}
+              >
+                {event.reminderEnabled ? (
+                  <Bell size={14} color={COLORS.accentDark} strokeWidth={2} />
+                ) : (
+                  <BellOff size={14} color={COLORS.textTertiary} strokeWidth={2} />
+                )}
+                <StyledText
+                  variant="caption"
+                  color={event.reminderEnabled ? COLORS.accentDark : COLORS.textTertiary}
+                  style={{ fontFamily: FONTS.sansSemiBold, letterSpacing: 0.5 }}
+                >
+                  {event.reminderEnabled ? 'RAPPEL ACTIF' : 'RAPPEL DÉSACTIVÉ'}
+                </StyledText>
+              </View>
+              <StyledText variant="title" style={{ marginTop: SPACING.xs }}>
+                {formatLongDate(event.nextDueDate)}
+              </StyledText>
+              <StyledText
+                variant="bodyMedium"
+                color={nextDueColor}
+                style={{ marginTop: 2 }}
+              >
+                {nextDueCd.text}
+              </StyledText>
+              {event.nextDueMileage !== undefined && (
+                <StyledText variant="small" style={{ marginTop: 4 }}>
+                  ou à {event.nextDueMileage.toLocaleString('fr-FR')} km
+                </StyledText>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* NOTES */}
+        {event.notes && (
+          <View style={{ marginBottom: SPACING.xl }}>
+            <StyledText
+              variant="eyebrow"
+              style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+            >
+              NOTES
+            </StyledText>
+            <Card
+              variant="outlined"
+              padding="base"
+              radius="md"
+              style={{ marginHorizontal: SPACING.lg }}
+            >
+              <StyledText variant="body">{event.notes}</StyledText>
+            </Card>
+          </View>
+        )}
+
+        {/* PIÈCES JOINTES */}
+        <View style={{ marginBottom: SPACING.xl }}>
+          <StyledText
+            variant="eyebrow"
+            style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+          >
+            PIÈCES JOINTES
+          </StyledText>
+          <View style={{ paddingHorizontal: SPACING.lg }}>
+            <AttachmentsSection
+              attachments={attachments}
+              eventId={event.id}
+              onChanged={loadEvent}
+            />
+          </View>
+        </View>
+
+        {/* ACTIONS */}
+        <SettingsGroup title="ACTIONS">
+          <SettingsItem
+            icon={Trash2}
+            label="Supprimer l'événement"
+            variant="danger"
+            onPress={handleDelete}
+            isLast
+          />
+        </SettingsGroup>
+      </Screen>
+
+      {/* STICKY BOTTOM CTA */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.md,
+          paddingBottom: SPACING.lg,
+          backgroundColor: COLORS.background,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
         }}
-      />
-
-      {/* Supprimer */}
-      <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-        <Text style={styles.deleteButtonText}>Supprimer cet événement</Text>
-      </TouchableOpacity>
-
-    </ScrollView>
-  );
-}
-
-function InfoRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={[styles.infoValue, highlight && styles.infoValueHighlight]}>{value}</Text>
+      >
+        <Pressable
+          onPress={() => router.push(`/event/edit/${event.id}`)}
+          style={({ pressed }) => [
+            {
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.md,
+              paddingVertical: SPACING.md,
+              alignItems: 'center',
+              ...SHADOWS.sm,
+            },
+            pressed && { opacity: 0.9 },
+          ]}
+        >
+          <StyledText variant="title" color={COLORS.textInverse}>
+            Modifier l'événement
+          </StyledText>
+        </Pressable>
+      </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, paddingBottom: 60 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  secondaryText: { color: colors.textSecondary, fontSize: fontSize.md },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-  },
-  headerIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  headerIconText: { fontSize: 24 },
-  headerInfo: { flex: 1 },
-  headerTitle: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text },
-  headerType: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  headerAssetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  headerAssetIcon: { fontSize: 13 },
-  headerAsset: { fontSize: fontSize.sm, color: colors.primary, fontWeight: fontWeight.medium },
-  headerAssetChevron: { fontSize: fontSize.sm, color: colors.primary },
-  headerRight: { alignItems: 'flex-end', gap: spacing.sm },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-  },
-  statusBadgePast: { backgroundColor: colors.surfaceAlt },
-  statusBadgeUpcoming: { backgroundColor: colors.primaryLight },
-  statusBadgeText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
-  statusBadgeTextPast: { color: colors.textSecondary },
-  statusBadgeTextUpcoming: { color: colors.primary },
-  editButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  editButtonText: { color: colors.primary, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  infoCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-  },
-  infoValueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  infoLabel: { fontSize: fontSize.sm, color: colors.textSecondary },
-  infoValue: { fontSize: fontSize.sm, color: colors.text, fontWeight: fontWeight.medium },
-  infoValueHighlight: { color: colors.accent, fontSize: fontSize.md, fontWeight: fontWeight.bold },
-  infoDelta: { fontSize: fontSize.xs, color: colors.textTertiary },
-  nextDueCard: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  nextDueHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-  },
-  nextDueLabel: { fontSize: fontSize.xs, color: colors.primary, fontWeight: fontWeight.semibold },
-  nextDueDate: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text },
-  nextDueDelta: { fontSize: fontSize.sm, fontWeight: fontWeight.medium, marginTop: 2 },
-  nextDueMileage: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 4 },
-  reminderBadge: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-  },
-  reminderBadgeText: { fontSize: fontSize.xs, color: colors.white },
-  notesCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-  },
-  sectionTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  notesText: { fontSize: fontSize.md, color: colors.text, lineHeight: 22 },
-  deleteButton: {
-    padding: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.dangerLight,
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  deleteButtonText: { color: colors.danger, fontWeight: fontWeight.medium },
-});

@@ -3,7 +3,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CATEGORY_FIELDS } from '../constants/categoryFields';
-import { colors, fontSize, fontWeight, radius, spacing } from '../constants/theme';
+import { COLORS, FONTS, RADIUS, SPACING } from '../constants/theme';
 
 const ENERGY_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
   'A+++': { bg: '#00A651', text: '#fff' },
@@ -38,21 +38,19 @@ export function ExtraDataDisplay({ categoryId, extraData }: Props) {
 
   if (!fields || !extraData) return null;
 
-  const filledFields = fields.filter(f => {
+  const filledFields = fields.filter((f) => {
     const val = extraData[f.key];
     return val !== undefined && val !== null && val !== '';
   });
 
   if (filledFields.length === 0) return null;
 
-  function renderValue(field: typeof fields[0]) {
+  function renderValue(field: (typeof fields)[0]) {
     const val = extraData[field.key];
 
     if (field.type === 'boolean') {
       return (
-        <Text style={styles.detailValue}>
-          {val === true ? 'Oui' : 'Non'}
-        </Text>
+        <Text style={styles.detailValue}>{val === true ? 'Oui' : 'Non'}</Text>
       );
     }
 
@@ -75,10 +73,8 @@ export function ExtraDataDisplay({ categoryId, extraData }: Props) {
     }
 
     if (field.type === 'select') {
-      const opt = field.options?.find(o => o.value === val);
-      return (
-        <Text style={styles.detailValue}>{opt?.label ?? val}</Text>
-      );
+      const opt = field.options?.find((o) => o.value === val);
+      return <Text style={styles.detailValue}>{opt?.label ?? val}</Text>;
     }
 
     if (field.type === 'date') {
@@ -93,10 +89,15 @@ export function ExtraDataDisplay({ categoryId, extraData }: Props) {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Informations détaillées</Text>
-      {filledFields.map(field => (
-        <View key={field.key} style={styles.row}>
+    <View>
+      {filledFields.map((field, idx) => (
+        <View
+          key={field.key}
+          style={[
+            styles.row,
+            idx === filledFields.length - 1 && { borderBottomWidth: 0 },
+          ]}
+        >
           <Text style={styles.detailLabel}>{field.label}</Text>
           {renderValue(field)}
         </View>
@@ -106,47 +107,37 @@ export function ExtraDataDisplay({ categoryId, extraData }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.xs,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.base,
     borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
+    borderBottomColor: COLORS.border,
+    gap: SPACING.md,
   },
   detailLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    flex: 1,
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
   detailValue: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-    fontWeight: fontWeight.medium,
+    fontFamily: FONTS.sansMedium,
+    fontSize: 15,
+    color: COLORS.text,
     textAlign: 'right',
-    flex: 1,
+    flexShrink: 1,
   },
   classBadge: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     minWidth: 36,
     alignItems: 'center',
   },
   classBadgeText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    fontFamily: FONTS.sansBold,
+    fontSize: 13,
   },
 });

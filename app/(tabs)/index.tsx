@@ -1,485 +1,282 @@
-// app/(tabs)/index.tsx
-
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
+import { View, ScrollView, RefreshControl, Pressable } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import Svg, { Rect, Text as SvgText } from 'react-native-svg';
-import { ASSET_CATEGORIES } from '../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../constants/theme';
+  Camera,
+  Plus,
+  Search,
+  History as HistoryIcon,
+} from 'lucide-react-native';
+import {
+  Screen,
+  StyledText,
+  Separator,
+  SectionHeader,
+  MiniKPI,
+  QuickAction,
+  ReminderCard,
+  AssetTile,
+  AddTile,
+} from '../../components/ui';
+import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import { useAppStore } from '../../src/stores/appStore';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
+import {
+  formatEUR,
+  getGreeting,
+  formatFullDate,
+  formatShortDate,
+  getCountdown,
+  getCategoryLabel,
+} from '../../src/utils/format';
+import type { MaintenanceEvent } from '../../src/types';
 
-const MONTHS_SHORT = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-
-function formatDisplayDate(iso: string): string {
-  if (iso.includes('-')) {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  }
-  return iso;
-}
-
-function getGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Bonjour';
-  if (h < 18) return 'Bon après-midi';
-  return 'Bonsoir';
-}
-
-function formatFullDate(): string {
-  return new Date().toLocaleDateString('fr-FR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-}
-
-interface MonthlyChartProps {
-  data: { month: number; total: number }[];
-}
-
-function MonthlyChart({ data }: MonthlyChartProps) {
-  const width = 320;
-  const height = 120;
-  const paddingLeft = 8;
-  const paddingRight = 8;
-  const paddingTop = 8;
-  const paddingBottom = 24;
-  const chartWidth = width - paddingLeft - paddingRight;
-  const chartHeight = height - paddingTop - paddingBottom;
-  const barWidth = chartWidth / 12 - 4;
-  const maxVal = Math.max(...data.map(d => d.total), 1);
-  const currentMonth = new Date().getMonth();
-
-  return (
-    <Svg width={width} height={height}>
-      {data.map((d, i) => {
-        const barHeight = Math.max((d.total / maxVal) * chartHeight, d.total > 0 ? 4 : 0);
-        const x = paddingLeft + i * (chartWidth / 12) + 2;
-        const y = paddingTop + chartHeight - barHeight;
-        const isCurrentMonth = i === currentMonth;
-        return (
-          <Rect
-            key={i}
-            x={x}
-            y={y}
-            width={barWidth}
-            height={barHeight}
-            rx={3}
-            fill={isCurrentMonth ? colors.primary : colors.primaryLight}
-          />
-        );
-      })}
-      {data.map((d, i) => {
-        const x = paddingLeft + i * (chartWidth / 12) + barWidth / 2 + 2;
-        return (
-          <SvgText
-            key={i}
-            x={x}
-            y={height - 6}
-            fontSize={8}
-            fill={colors.textTertiary}
-            textAnchor="middle"
-          >
-            {MONTHS_SHORT[i]}
-          </SvgText>
-        );
-      })}
-    </Svg>
-  );
-}
+const PAD = SPACING.lg;
 
 export default function HomeScreen() {
-  const { assets, fetchAssets } = useAssetStore();
-  const {
-    upcomingReminders,
-    fetchUpcomingReminders,
-    getYearlyCost,
-    getUpcomingCost,
-    getMonthlyCosts,
-    getCostByCategory,
-    getTotalPatrimony,
-  } = useEventStore();
-  const { userName } = useAppStore();
+  const userName = useAppStore((s) => s.userName);
+  const assets = useAssetStore((s) => s.assets);
+  const fetchAssets = useAssetStore((s) => s.fetchAssets);
+  const upcomingReminders = useEventStore((s) => s.upcomingReminders);
+  const fetchUpcomingReminders = useEventStore((s) => s.fetchUpcomingReminders);
+  const getTotalPatrimony = useEventStore((s) => s.getTotalPatrimony);
+  const getYearlyCost = useEventStore((s) => s.getYearlyCost);
+  const getUpcomingCost = useEventStore((s) => s.getUpcomingCost);
+
   const [refreshing, setRefreshing] = useState(false);
-  const [annualCost, setAnnualCost] = useState(0);
-  const [upcomingCost, setUpcomingCost] = useState(0);
-  const [monthlyCosts, setMonthlyCosts] = useState<{ month: number; total: number }[]>([]);
-  const [categoryStats, setCategoryStats] = useState<{ categoryId: string; total: number }[]>([]);
   const [patrimony, setPatrimony] = useState(0);
+  const [yearlyCost, setYearlyCost] = useState(0);
+  const [upcomingCost, setUpcomingCost] = useState(0);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  const now = new Date();
+  const greeting = getGreeting(now);
+  const dateLabel = formatFullDate(now);
+  const currentYear = now.getFullYear();
 
-  async function loadData() {
-    const year = new Date().getFullYear();
-    await fetchAssets();
-    await fetchUpcomingReminders();
-    const [cost, upcoming, monthly, categories, pat] = await Promise.all([
-      getYearlyCost(year),
-      getUpcomingCost(),
-      getMonthlyCosts(year),
-      getCostByCategory(year),
+  const loadAggregates = useCallback(async () => {
+    const [patri, yearly, upc] = await Promise.all([
       getTotalPatrimony(),
+      getYearlyCost(currentYear),
+      getUpcomingCost(),
     ]);
-    setAnnualCost(cost);
-    setUpcomingCost(upcoming);
-    setMonthlyCosts(monthly);
-    setCategoryStats(categories.slice(0, 4));
-    setPatrimony(pat);
-  }
+    setPatrimony(patri);
+    setYearlyCost(yearly);
+    setUpcomingCost(upc);
+  }, [getTotalPatrimony, getYearlyCost, getUpcomingCost, currentYear]);
 
-  async function onRefresh() {
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      (async () => {
+        await Promise.all([fetchAssets(), fetchUpcomingReminders()]);
+        if (active) await loadAggregates();
+      })();
+      return () => {
+        active = false;
+      };
+    }, [fetchAssets, fetchUpcomingReminders, loadAggregates]),
+  );
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([fetchAssets(), fetchUpcomingReminders()]);
+    await loadAggregates();
     setRefreshing(false);
-  }
+  }, [fetchAssets, fetchUpcomingReminders, loadAggregates]);
 
-  const today = new Date().toISOString().split('T')[0];
-  const overdue = upcomingReminders.filter(r => r.nextDueDate && r.nextDueDate < today);
-  const upcoming = upcomingReminders.filter(r => r.nextDueDate && r.nextDueDate >= today).slice(0, 3);
+  // Rappels triés par échéance, top 6
+  const sortedReminders: MaintenanceEvent[] = [...upcomingReminders]
+    .sort((a, b) => (a.nextDueDate ?? '').localeCompare(b.nextDueDate ?? ''))
+    .slice(0, 6);
 
-  function getCategoryIcon(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.icon ?? '📦';
-  }
+  const recentAssets = assets.slice(0, 3);
+  const showAddTile = recentAssets.length > 0 && recentAssets.length < 3;
 
-  function getCategoryLabel(categoryId: string): string {
-    return ASSET_CATEGORIES.find(c => c.id === categoryId)?.label ?? categoryId;
-  }
-
-  const totalCategorySpend = categoryStats.reduce((s, c) => s + c.total, 0);
-  const hasChartData = monthlyCosts.some(m => m.total > 0);
+  const getAssetName = (assetId: string) =>
+    assets.find((a) => a.id === assetId)?.name;
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+    <Screen
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={COLORS.primary}
+        />
+      }
     >
-      {/* Hero */}
-      <View style={styles.hero}>
-        <Text style={styles.heroDate}>{formatFullDate()}</Text>
-        <Text style={styles.heroGreeting}>
-          {getGreeting()}{userName ? `, ${userName}` : ''}
-        </Text>
-        <View style={styles.heroDivider} />
-        <Text style={styles.heroSub}>
-          {assets.length} bien{assets.length > 1 ? 's' : ''} · {upcomingReminders.length} rappel{upcomingReminders.length > 1 ? 's' : ''}
-        </Text>
+      {/* HEADER ÉDITORIAL */}
+      <View style={{ paddingHorizontal: PAD, paddingTop: SPACING.lg, paddingBottom: SPACING.md }}>
+        <StyledText variant="eyebrow">{dateLabel.toUpperCase()}</StyledText>
+        <View style={{ marginTop: SPACING.sm }}>
+          <StyledText variant="h1">{greeting},</StyledText>
+          <StyledText variant="h1">
+            {userName ? `${userName}.` : 'bienvenue.'}
+          </StyledText>
+        </View>
+
+        <Separator variant="accent" style={{ marginVertical: SPACING.lg }} />
+
+        <StyledText variant="eyebrow">PATRIMOINE TOTAL</StyledText>
+        <StyledText variant="display" style={{ marginTop: SPACING.xs }}>
+          {formatEUR(patrimony)}
+        </StyledText>
       </View>
 
-      {/* Stats */}
-      <View style={styles.statsGrid}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{annualCost.toFixed(0)} €</Text>
-          <Text style={styles.statLabel}>Dépensé en {new Date().getFullYear()}</Text>
+      {/* QUICK ACTIONS RIBBON */}
+      <View
+        style={{
+          flexDirection: 'row',
+          paddingHorizontal: PAD,
+          paddingVertical: SPACING.md,
+          gap: SPACING.md,
+        }}
+      >
+        <QuickAction
+          icon={Camera}
+          label="Scanner"
+          onPress={() => router.push('/asset/scan-invoice')}
+        />
+        <QuickAction
+          icon={Plus}
+          label="Ajouter"
+          onPress={() => router.push('/asset/add')}
+        />
+        <QuickAction
+          icon={Search}
+          label="Recherche"
+          onPress={() => router.push('/search')}
+        />
+        <QuickAction
+          icon={HistoryIcon}
+          label="Historique"
+          onPress={() => router.push('/history')}
+        />
+      </View>
+
+      {/* MINI KPIs */}
+      <View
+        style={{
+          flexDirection: 'row',
+          paddingHorizontal: PAD,
+          paddingVertical: SPACING.lg,
+          gap: SPACING.xl,
+        }}
+      >
+        <MiniKPI
+          label={`DÉPENSES ${currentYear}`}
+          value={formatEUR(yearlyCost)}
+          subtitle={yearlyCost === 0 ? 'Aucune dépense' : undefined}
+        />
+        <MiniKPI
+          label="À VENIR"
+          value={formatEUR(upcomingCost)}
+          subtitle={upcomingCost > 0 ? 'sur les prochains mois' : 'Rien de prévu'}
+          accent
+        />
+      </View>
+
+      {/* PROCHAINS RAPPELS */}
+      {sortedReminders.length > 0 && (
+        <View style={{ marginTop: SPACING.md }}>
+          <View style={{ paddingHorizontal: PAD }}>
+            <SectionHeader
+              eyebrow="Prochains rappels"
+              actionLabel={
+                upcomingReminders.length > sortedReminders.length ? 'Tout voir' : undefined
+              }
+              onActionPress={() => router.push('/reminders')}
+            />
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: PAD }}
+          >
+            {sortedReminders.map((reminder) => {
+              const cd = reminder.nextDueDate
+                ? getCountdown(reminder.nextDueDate)
+                : { text: 'Sans date', isOverdue: false };
+              const due = reminder.nextDueDate
+                ? formatShortDate(reminder.nextDueDate)
+                : '';
+              return (
+                <ReminderCard
+                  key={reminder.id}
+                  title={reminder.title}
+                  dueDate={due}
+                  countdown={cd.text}
+                  assetName={getAssetName(reminder.assetId)}
+                  isOverdue={cd.isOverdue}
+                  onPress={() => router.push(`/event/${reminder.id}`)}
+                />
+              );
+            })}
+          </ScrollView>
         </View>
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, upcomingCost > 0 && styles.statValueAccent]}>
-            {upcomingCost.toFixed(0)} €
-          </Text>
-          <Text style={styles.statLabel}>À venir</Text>
-        </View>
-        {patrimony > 0 && (
-          <View style={[styles.statCard, styles.statCardFull]}>
-            <Text style={styles.statValue}>{patrimony.toFixed(0)} €</Text>
-            <Text style={styles.statLabel}>Valeur d'achat totale des biens</Text>
+      )}
+
+      {/* MES BIENS */}
+      <View style={{ marginTop: SPACING.xl, paddingHorizontal: PAD }}>
+        <SectionHeader
+          eyebrow={
+            assets.length > 0 ? `Mes biens (${assets.length})` : 'Mes biens'
+          }
+          actionLabel={assets.length > recentAssets.length ? 'Tout voir' : undefined}
+          onActionPress={() => router.push('/assets')}
+        />
+
+        {assets.length === 0 ? (
+          <View
+            style={{
+              backgroundColor: COLORS.surfaceAlt,
+              padding: SPACING.xl,
+              borderRadius: RADIUS.md,
+              alignItems: 'center',
+              gap: SPACING.md,
+            }}
+          >
+            <StyledText
+              variant="body"
+              color={COLORS.textSecondary}
+              align="center"
+            >
+              Aucun bien pour l'instant.{'\n'}Ajoutez-en un ou scannez une facture pour commencer.
+            </StyledText>
+            <Pressable
+              onPress={() => router.push('/asset/add')}
+              style={({ pressed }) => [
+                {
+                  backgroundColor: COLORS.primary,
+                  paddingHorizontal: SPACING.lg,
+                  paddingVertical: SPACING.sm + 2,
+                  borderRadius: RADIUS.sm,
+                },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <StyledText variant="smallMedium" color={COLORS.textInverse}>
+                Ajouter mon premier bien
+              </StyledText>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', gap: SPACING.md }}>
+            {recentAssets.map((asset) => (
+              <AssetTile
+                key={asset.id}
+                imageUri={asset.coverImageUri}
+                name={asset.name}
+                category={getCategoryLabel(asset.categoryId)}
+                categoryId={asset.categoryId}
+                onPress={() => router.push(`/asset/${asset.id}`)}
+              />
+            ))}
+            {showAddTile && <AddTile onPress={() => router.push('/asset/add')} />}
           </View>
         )}
       </View>
-
-      {/* Graphique mensuel */}
-      {hasChartData && (
-        <View style={styles.chartCard}>
-          <Text style={styles.chartTitle}>Dépenses {new Date().getFullYear()}</Text>
-          <MonthlyChart data={monthlyCosts} />
-        </View>
-      )}
-
-      {/* Répartition par catégorie */}
-      {categoryStats.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Par catégorie</Text>
-          <View style={styles.categoryStatsCard}>
-            {categoryStats.map((c, i) => {
-              const pct = totalCategorySpend > 0 ? (c.total / totalCategorySpend) * 100 : 0;
-              return (
-                <View key={c.categoryId} style={[styles.categoryStatRow, i > 0 && styles.categoryStatBorder]}>
-                  <Text style={styles.categoryStatIcon}>{getCategoryIcon(c.categoryId)}</Text>
-                  <View style={styles.categoryStatInfo}>
-                    <View style={styles.categoryStatHeader}>
-                      <Text style={styles.categoryStatLabel}>{getCategoryLabel(c.categoryId)}</Text>
-                      <Text style={styles.categoryStatValue}>{c.total.toFixed(0)} €</Text>
-                    </View>
-                    <View style={styles.progressBar}>
-                      <View style={[styles.progressFill, { width: `${pct}%` as any }]} />
-                    </View>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-      )}
-
-      {/* En retard */}
-      {overdue.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>⚠️ En retard</Text>
-          {overdue.map(r => (
-            <TouchableOpacity
-              key={r.id}
-              style={[styles.reminderCard, styles.overdueCard]}
-              onPress={() => router.push(`/event/${r.id}`)}
-            >
-              <View style={styles.reminderInfo}>
-                <Text style={styles.reminderTitle}>{r.title}</Text>
-                <Text style={styles.reminderDate}>{formatDisplayDate(r.nextDueDate!)}</Text>
-              </View>
-              <Text style={styles.overdueLabel}>En retard</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Prochains rappels */}
-      {upcoming.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔔 Prochains rappels</Text>
-          {upcoming.map(r => (
-            <TouchableOpacity
-              key={r.id}
-              style={styles.reminderCard}
-              onPress={() => router.push(`/event/${r.id}`)}
-            >
-              <View style={styles.reminderInfo}>
-                <Text style={styles.reminderTitle}>{r.title}</Text>
-                <Text style={styles.reminderDate}>{formatDisplayDate(r.nextDueDate!)}</Text>
-              </View>
-              {r.reminderEnabled && <Text style={styles.notifIcon}>🔔</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Mes biens */}
-      {assets.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Mes biens</Text>
-            {assets.length > 3 && (
-              <TouchableOpacity onPress={() => router.push('/(tabs)/assets')}>
-                <Text style={styles.sectionLink}>Voir tout</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          {assets.slice(0, 3).map(a => (
-            <TouchableOpacity
-              key={a.id}
-              style={styles.assetCard}
-              onPress={() => router.push(`/asset/${a.id}`)}
-            >
-              <Text style={styles.assetIcon}>{getCategoryIcon(a.categoryId)}</Text>
-              <View style={styles.assetInfo}>
-                <Text style={styles.assetName}>{a.name}</Text>
-                <Text style={styles.assetCategory}>{getCategoryLabel(a.categoryId)}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {/* Empty state */}
-      {assets.length === 0 && (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>🏠</Text>
-          <Text style={styles.emptyTitle}>Aucun bien enregistré</Text>
-          <Text style={styles.emptyText}>Ajoutez votre premier bien pour commencer</Text>
-          <TouchableOpacity style={styles.addButton} onPress={() => router.push('/asset/add')}>
-            <Text style={styles.addButtonText}>+ Ajouter un bien</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {assets.length > 0 && (
-        <TouchableOpacity style={styles.fab} onPress={() => router.push('/asset/add')}>
-          <Text style={styles.fabText}>+ Ajouter un bien</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+    </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { paddingBottom: 100 },
-  hero: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xl,
-  },
-  heroDate: {
-    fontSize: fontSize.lg,
-    color: colors.textSecondary,
-    textTransform: 'capitalize',
-    letterSpacing: 0.3,
-    marginBottom: spacing.xs,
-  },
-  heroGreeting: {
-    fontSize: 38,
-    fontWeight: fontWeight.bold,
-    color: colors.text,
-    letterSpacing: -0.5,
-  },
-  heroDivider: {
-    width: 32,
-    height: 3,
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
-  },
-  heroSub: { fontSize: fontSize.sm, color: colors.textSecondary },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-  },
-  statCard: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    ...shadow.sm,
-  },
-  statCardFull: { flexBasis: '100%', flex: 0 },
-  statValue: { fontSize: fontSize.xxl, fontWeight: fontWeight.bold, color: colors.text },
-  statValueAccent: { color: colors.accent },
-  statLabel: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 4 },
-  chartCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-    alignItems: 'center',
-  },
-  chartTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    alignSelf: 'flex-start',
-    marginBottom: spacing.sm,
-  },
-  section: { marginBottom: spacing.lg, paddingHorizontal: spacing.lg },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: spacing.sm,
-  },
-  sectionLink: { fontSize: fontSize.sm, color: colors.primary, fontWeight: fontWeight.medium },
-  categoryStatsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-    ...shadow.sm,
-  },
-  categoryStatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  categoryStatBorder: { borderTopWidth: 1, borderTopColor: colors.border },
-  categoryStatIcon: { fontSize: 20, width: 28, textAlign: 'center' },
-  categoryStatInfo: { flex: 1 },
-  categoryStatHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  categoryStatLabel: { fontSize: fontSize.sm, color: colors.text, fontWeight: fontWeight.medium },
-  categoryStatValue: { fontSize: fontSize.sm, color: colors.accent, fontWeight: fontWeight.semibold },
-  progressBar: {
-    height: 4,
-    backgroundColor: colors.border,
-    borderRadius: radius.full,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: 4,
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-  },
-  reminderCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  overdueCard: { borderLeftWidth: 3, borderLeftColor: colors.danger },
-  reminderInfo: { flex: 1 },
-  reminderTitle: { fontSize: fontSize.md, color: colors.text, fontWeight: fontWeight.medium },
-  reminderDate: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  overdueLabel: { fontSize: fontSize.xs, color: colors.danger, fontWeight: fontWeight.semibold },
-  notifIcon: { fontSize: 14 },
-  assetCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    ...shadow.sm,
-  },
-  assetIcon: { fontSize: 24 },
-  assetInfo: { flex: 1 },
-  assetName: { fontSize: fontSize.md, color: colors.text, fontWeight: fontWeight.medium },
-  assetCategory: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  emptyState: { alignItems: 'center', paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg },
-  emptyIcon: { fontSize: 48, marginBottom: spacing.md },
-  emptyTitle: { fontSize: fontSize.xl, fontWeight: fontWeight.semibold, color: colors.text, marginBottom: spacing.sm },
-  emptyText: { fontSize: fontSize.md, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg },
-  addButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-  },
-  addButtonText: { color: colors.white, fontWeight: fontWeight.semibold, fontSize: fontSize.md },
-  fab: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    ...shadow.md,
-  },
-  fabText: { color: colors.white, fontSize: fontSize.md, fontWeight: fontWeight.semibold },
-});

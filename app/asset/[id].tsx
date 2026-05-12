@@ -1,107 +1,160 @@
 // app/asset/[id].tsx
 
 import * as ImagePicker from 'expo-image-picker';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
+  Image,
+  Pressable,
+  Alert,
+  RefreshControl,
+  ActionSheetIOS,
+  Platform,
 } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import {
+  Camera,
+  ChevronRight,
+  Plus,
+  FileText,
+  Archive,
+  Trash2,
+  Bell,
+} from 'lucide-react-native';
 import AttachmentsSection from '../../components/AttachmentsSection';
 import { ExtraDataDisplay } from '../../components/ExtraDataDisplay';
-import { ASSET_CATEGORIES, EVENT_TYPES } from '../../constants/categories';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../../constants/theme';
+import {
+  Screen,
+  StyledText,
+  Card,
+  StatCard,
+  InfoRow,
+  EventListItem,
+  SectionHeader,
+  SettingsGroup,
+  SettingsItem,
+  CategoryIcon,
+} from '../../components/ui';
+import { COLORS, RADIUS, SPACING, SHADOWS, FONTS } from '../../constants/theme';
 import { getAttachmentsByAsset } from '../../src/repositories/eventRepository';
 import { exportAssetPDF } from '../../src/services/pdfService';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
-import { Attachment } from '../../src/types';
+import {
+  formatEUR,
+  formatLongDate,
+  getCategoryLabel,
+} from '../../src/utils/format';
+import type { Attachment } from '../../src/types';
 
-type EventSortKey = 'date_desc' | 'date_asc' | 'cost_desc';
+type EventSort = 'date_desc' | 'date_asc' | 'cost_desc';
 
-const EVENT_SORT_LABELS: Record<EventSortKey, string> = {
-  date_desc: 'Plus récent',
-  date_asc: 'Plus ancien',
-  cost_desc: 'Coût ↓',
+const EVENT_SORT_LABELS: Record<EventSort, string> = {
+  date_desc: 'Date (récent)',
+  date_asc: 'Date (ancien)',
+  cost_desc: 'Coût',
 };
-
-function formatDisplayDate(iso: string): string {
-  if (iso.includes('-')) {
-    const [y, m, d] = iso.split('-');
-    return `${d}/${m}/${y}`;
-  }
-  return iso;
-}
 
 export default function AssetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { assets, removeAsset, archiveAsset, editAsset } = useAssetStore();
-  const { fetchEventsByAsset, events, getTotalCost } = useEventStore();
+  const assets = useAssetStore((s) => s.assets);
+  const removeAsset = useAssetStore((s) => s.removeAsset);
+  const archiveAsset = useAssetStore((s) => s.archiveAsset);
+  const editAsset = useAssetStore((s) => s.editAsset);
+  const events = useEventStore((s) => s.events);
+  const fetchEventsByAsset = useEventStore((s) => s.fetchEventsByAsset);
+  const getTotalCost = useEventStore((s) => s.getTotalCost);
+
   const [totalCost, setTotalCost] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [eventSort, setEventSort] = useState<EventSortKey>('date_desc');
+  const [eventSort, setEventSort] = useState<EventSort>('date_desc');
+  const [refreshing, setRefreshing] = useState(false);
 
-  const asset = assets.find(a => a.id === id);
+  const asset = useMemo(() => assets.find((a) => a.id === id), [assets, id]);
+  const assetEvents = useMemo(
+    () => events.filter((e) => e.assetId === id),
+    [events, id],
+  );
 
-  useEffect(() => {
-    if (id) {
-      fetchEventsByAsset(id);
-      getTotalCost(id).then(setTotalCost);
-      getAttachmentsByAsset(id).then(setAttachments);
-    }
+  const loadAttachments = useCallback(async () => {
+    if (!id) return;
+    const list = await getAttachmentsByAsset(id);
+    setAttachments(list);
   }, [id]);
 
+  useEffect(() => {
+    if (!id) return;
+    fetchEventsByAsset(id);
+    getTotalCost(id).then(setTotalCost);
+    loadAttachments();
+  }, [id, fetchEventsByAsset, getTotalCost, loadAttachments]);
+
+  const onRefresh = useCallback(async () => {
+    if (!id) return;
+    setRefreshing(true);
+    await fetchEventsByAsset(id);
+    const c = await getTotalCost(id);
+    setTotalCost(c);
+    await loadAttachments();
+    setRefreshing(false);
+  }, [id, fetchEventsByAsset, getTotalCost, loadAttachments]);
+
   const sortedEvents = useMemo(() => {
-    return [...events].sort((a, b) => {
-      if (eventSort === 'date_asc') return a.eventDate.localeCompare(b.eventDate);
-      if (eventSort === 'cost_desc') return (b.cost ?? 0) - (a.cost ?? 0);
-      return b.eventDate.localeCompare(a.eventDate);
-    });
-  }, [events, eventSort]);
+    const list = [...assetEvents];
+    if (eventSort === 'date_desc') {
+      list.sort((a, b) => (b.eventDate ?? '').localeCompare(a.eventDate ?? ''));
+    } else if (eventSort === 'date_asc') {
+      list.sort((a, b) => (a.eventDate ?? '').localeCompare(b.eventDate ?? ''));
+    } else {
+      list.sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0));
+    }
+    return list;
+  }, [assetEvents, eventSort]);
 
-  function cycleEventSort() {
-    setEventSort(prev => {
-      if (prev === 'date_desc') return 'date_asc';
-      if (prev === 'date_asc') return 'cost_desc';
-      return 'date_desc';
-    });
-  }
+  const nextEvent = useMemo(() => {
+    const todayIso = new Date().toISOString().split('T')[0];
+    return assetEvents
+      .filter((e) => e.nextDueDate && e.nextDueDate >= todayIso)
+      .sort((a, b) =>
+        (a.nextDueDate ?? '').localeCompare(b.nextDueDate ?? ''),
+      )[0];
+  }, [assetEvents]);
 
-  if (!asset) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>Bien introuvable</Text>
-      </View>
-    );
-  }
+  const mileage = useMemo(() => {
+    if (!asset) return undefined;
+    const veh = asset.vehicleDetails;
+    if (veh?.mileageCurrent !== undefined) return veh.mileageCurrent;
+    const data = (asset.extraData ?? {}) as Record<string, unknown>;
+    const m = data.mileage;
+    return typeof m === 'number' ? m : undefined;
+  }, [asset]);
 
-  const category = ASSET_CATEGORIES.find(c => c.id === asset.categoryId);
-  const nextEvent = events
-    .filter(e => e.nextDueDate && e.status === 'upcoming')
-    .sort((a, b) => (a.nextDueDate! < b.nextDueDate! ? -1 : 1))[0];
+  const handleEventSort = () => {
+    const options: EventSort[] = ['date_desc', 'date_asc', 'cost_desc'];
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: 'Trier par',
+          options: ['Date (récent)', 'Date (ancien)', 'Coût', 'Annuler'],
+          cancelButtonIndex: 3,
+        },
+        (idx) => {
+          if (idx !== undefined && idx >= 0 && idx < 3) {
+            setEventSort(options[idx]);
+          }
+        },
+      );
+    } else {
+      Alert.alert('Trier par', undefined, [
+        { text: 'Date (récent)', onPress: () => setEventSort('date_desc') },
+        { text: 'Date (ancien)', onPress: () => setEventSort('date_asc') },
+        { text: 'Coût', onPress: () => setEventSort('cost_desc') },
+        { text: 'Annuler', style: 'cancel' },
+      ]);
+    }
+  };
 
-  const mileage = (asset.extraData as any)?.mileage ?? asset.vehicleDetails?.mileageCurrent;
-
-  const brandModel = (() => {
-    const data = asset.extraData as Record<string, any> | undefined;
-    const brand = data?.brand ?? asset.brand;
-    const model = data?.model ?? asset.model;
-    if (brand && model) return `${brand} · ${model}`;
-    if (brand) return brand;
-    if (model) return model;
-    return null;
-  })();
-
-  function getEventTypeIcon(type: string) {
-    return EVENT_TYPES.find(t => t.id === type)?.icon ?? '📝';
-  }
-
-  async function handlePickImage() {
+  const handleChangePhoto = async () => {
     Alert.alert(
       'Photo du bien',
       'Choisir une source',
@@ -153,19 +206,30 @@ export default function AssetDetailScreen() {
             }
           },
         },
-      ]
+      ],
     );
-  }
+  };
 
-  async function handleExport() {
-    try {
-      await exportAssetPDF(asset!, events);
-    } catch (e: any) {
-      Alert.alert('Erreur', 'Impossible de générer le PDF.');
-    }
-  }
+  const handleArchive = () => {
+    if (!asset) return;
+    Alert.alert(
+      'Archiver ce bien',
+      'Le bien sera masqué de la liste principale.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Archiver',
+          onPress: async () => {
+            await archiveAsset(asset.id);
+            router.back();
+          },
+        },
+      ],
+    );
+  };
 
-  function handleDelete() {
+  const handleDelete = () => {
+    if (!asset) return;
     Alert.alert(
       'Supprimer ce bien',
       'Cette action est irréversible. Tous les événements associés seront supprimés.',
@@ -175,397 +239,478 @@ export default function AssetDetailScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            await removeAsset(id);
+            await removeAsset(asset.id);
             router.back();
           },
         },
-      ]
+      ],
+    );
+  };
+
+  const handleExportPDF = async () => {
+    if (!asset) return;
+    try {
+      await exportAssetPDF(asset, events);
+    } catch (e: any) {
+      Alert.alert('Erreur', 'Impossible de générer le PDF.');
+    }
+  };
+
+  if (!asset) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: COLORS.background,
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: SPACING.lg,
+        }}
+      >
+        <StyledText variant="h3" align="center" style={{ marginBottom: SPACING.sm }}>
+          Bien introuvable
+        </StyledText>
+        <StyledText variant="body" color={COLORS.textSecondary} align="center">
+          Ce bien n'existe plus.
+        </StyledText>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [
+            {
+              marginTop: SPACING.lg,
+              paddingHorizontal: SPACING.lg,
+              paddingVertical: SPACING.sm,
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.sm,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
+        >
+          <StyledText variant="smallMedium" color={COLORS.textInverse}>
+            Retour
+          </StyledText>
+        </Pressable>
+      </View>
     );
   }
 
-  function handleArchive() {
-    Alert.alert(
-      'Archiver ce bien',
-      'Le bien sera masqué de la liste principale.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Archiver',
-          onPress: async () => {
-            await archiveAsset(id);
-            router.back();
-          },
-        },
-      ]
-    );
-  }
+  const categoryLabel = getCategoryLabel(asset.categoryId);
 
-  const hasBasicInfo = asset.location || asset.purchasePrice || asset.serialNumber;
+  const brandModel = (() => {
+    const data = asset.extraData as Record<string, any> | undefined;
+    const brand = data?.brand ?? asset.brand;
+    const model = data?.model ?? asset.model;
+    if (brand && model) return `${brand} · ${model}`;
+    if (brand) return brand;
+    if (model) return model;
+    return null;
+  })();
 
   return (
-    <View style={styles.wrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.headerIcon} onPress={handlePickImage}>
-            {asset.coverImageUri ? (
-              <Image source={{ uri: asset.coverImageUri }} style={styles.coverImage} />
-            ) : (
-              <Text style={styles.headerIconText}>{category?.icon ?? '📦'}</Text>
-            )}
-            <View style={styles.cameraOverlay}>
-              <Text style={styles.cameraIcon}>📷</Text>
-            </View>
-          </TouchableOpacity>
-          <View style={styles.headerInfo}>
-            <Text style={styles.headerName}>{asset.name}</Text>
-            <Text style={styles.headerCategory}>{category?.label}</Text>
-            {brandModel && (
-              <Text style={styles.headerBrand}>{brandModel}</Text>
-            )}
-          </View>
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => router.push(`/asset/edit/${id}`)}
-          >
-            <Text style={styles.editButtonText}>Modifier</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{totalCost.toFixed(0)} €</Text>
-            <Text style={styles.statLabel}>Coût total</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statValue}>{events.length}</Text>
-            <Text style={styles.statLabel}>Événements</Text>
-          </View>
-          {mileage ? (
-            <View style={styles.statCard}>
-              <Text style={styles.statValue}>{mileage.toLocaleString()}</Text>
-              <Text style={styles.statLabel}>km</Text>
-            </View>
-          ) : null}
-        </View>
-
-        {/* Next event */}
-        {nextEvent && (
-          <View style={styles.nextEventCard}>
-            <Text style={styles.nextEventLabel}>Prochain entretien</Text>
-            <Text style={styles.nextEventTitle}>{nextEvent.title}</Text>
-            <Text style={styles.nextEventDate}>{formatDisplayDate(nextEvent.nextDueDate!)}</Text>
-          </View>
-        )}
-
-        {/* Infos de base */}
-        {hasBasicInfo && (
-          <View style={styles.detailsCard}>
-            <Text style={styles.sectionTitle}>Général</Text>
-            {asset.location && <DetailRow label="Localisation" value={asset.location} />}
-            {asset.purchasePrice && <DetailRow label="Prix d'achat" value={`${asset.purchasePrice} €`} />}
-            {asset.serialNumber && <DetailRow label="N° de série" value={asset.serialNumber} />}
-          </View>
-        )}
-
-        {/* Extra data par catégorie */}
-        {asset.extraData && (
-          <ExtraDataDisplay
-            categoryId={asset.categoryId}
-            extraData={asset.extraData as Record<string, any>}
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+      <Screen
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.primary}
           />
-        )}
-
-        {/* Events history */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Historique</Text>
-            <View style={styles.sectionHeaderRight}>
-              {events.length > 1 && (
-                <TouchableOpacity style={styles.sortChip} onPress={cycleEventSort}>
-                  <Text style={styles.sortChipText}>↕ {EVENT_SORT_LABELS[eventSort]}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity onPress={() => router.push({ pathname: '/event/add', params: { assetId: id } })}>
-                <Text style={styles.addEventLink}>+ Ajouter</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {sortedEvents.length === 0 ? (
-            <View style={styles.emptyEvents}>
-              <Text style={styles.emptyEventsText}>Aucun événement enregistré</Text>
-              <TouchableOpacity
-                style={styles.addEventButton}
-                onPress={() => router.push({ pathname: '/event/add', params: { assetId: id } })}
-              >
-                <Text style={styles.addEventButtonText}>+ Ajouter un événement</Text>
-              </TouchableOpacity>
-            </View>
+        }
+      >
+        {/* HERO PHOTO */}
+        <Pressable
+          onPress={handleChangePhoto}
+          style={({ pressed }) => [
+            {
+              marginHorizontal: SPACING.lg,
+              marginTop: SPACING.md,
+              height: 220,
+              borderRadius: RADIUS.lg,
+              overflow: 'hidden',
+              backgroundColor: COLORS.surfaceAlt,
+            },
+            pressed && { opacity: 0.92 },
+          ]}
+        >
+          {asset.coverImageUri ? (
+            <Image
+              source={{ uri: asset.coverImageUri }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
           ) : (
-            sortedEvents.map(event => (
-              <TouchableOpacity
-                key={event.id}
-                style={styles.eventCard}
-                onPress={() => router.push(`/event/${event.id}`)}
-              >
-                <View style={styles.eventIcon}>
-                  <Text>{getEventTypeIcon(event.eventType)}</Text>
-                </View>
-                <View style={styles.eventInfo}>
-                  <Text style={styles.eventTitle}>{event.title}</Text>
-                  <Text style={styles.eventDate}>{formatDisplayDate(event.eventDate)}</Text>
-                  {event.providerName && (
-                    <Text style={styles.eventProvider}>{event.providerName}</Text>
-                  )}
-                </View>
-                <View style={styles.eventRight}>
-                  {event.cost !== undefined && (
-                    <Text style={styles.eventCost}>{event.cost} €</Text>
-                  )}
-                  <View style={[
-                    styles.eventBadge,
-                    event.status === 'upcoming' ? styles.eventBadgeUpcoming : styles.eventBadgePast,
-                  ]}>
-                    <Text style={[
-                      styles.eventBadgeText,
-                      event.status === 'upcoming' ? styles.eventBadgeTextUpcoming : styles.eventBadgeTextPast,
-                    ]}>
-                      {event.status === 'upcoming' ? 'À venir' : 'Passé'}
-                    </Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+              <CategoryIcon
+                categoryId={asset.categoryId}
+                size={64}
+                color={COLORS.textTertiary}
+                strokeWidth={1}
+              />
+            </View>
+          )}
+          {/* Camera pill bottom-right */}
+          <View
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              right: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: RADIUS.full,
+              backgroundColor: 'rgba(17, 24, 39, 0.85)',
+            }}
+          >
+            <Camera size={12} color={COLORS.textInverse} strokeWidth={2} />
+            <StyledText
+              variant="caption"
+              color={COLORS.textInverse}
+              style={{ fontFamily: FONTS.sansSemiBold }}
+            >
+              Modifier
+            </StyledText>
+          </View>
+        </Pressable>
+
+        {/* HEADER INFO */}
+        <View
+          style={{
+            paddingHorizontal: SPACING.lg,
+            paddingTop: SPACING.lg,
+            paddingBottom: SPACING.md,
+          }}
+        >
+          <StyledText variant="eyebrow" color={COLORS.accentDark}>
+            {categoryLabel}
+          </StyledText>
+          <StyledText
+            variant="h1"
+            style={{ marginTop: SPACING.xs, fontSize: 28, lineHeight: 34 }}
+          >
+            {asset.name}
+          </StyledText>
+          {brandModel && (
+            <StyledText variant="small" style={{ marginTop: 2 }}>
+              {brandModel}
+            </StyledText>
           )}
         </View>
 
-        {/* Pièces jointes */}
-        <AttachmentsSection
-          attachments={attachments}
-          assetId={id}
-          onChanged={() => getAttachmentsByAsset(id).then(setAttachments)}
-        />
+        {/* STATS ROW */}
+        <View
+          style={{
+            flexDirection: 'row',
+            paddingHorizontal: SPACING.lg,
+            gap: SPACING.sm,
+            marginBottom: SPACING.xl,
+          }}
+        >
+          <StatCard label="COÛT TOTAL" value={formatEUR(totalCost)} accent />
+          <StatCard label="ÉVÉNEMENTS" value={assetEvents.length} />
+          {mileage !== undefined && (
+            <StatCard
+              label="KM"
+              value={(mileage as number).toLocaleString('fr-FR')}
+            />
+          )}
+        </View>
 
-        {/* Notes */}
-        {asset.notes && (
-          <View style={styles.detailsCard}>
-            <Text style={styles.sectionTitle}>Notes</Text>
-            <Text style={styles.notesText}>{asset.notes}</Text>
+        {/* NEXT EVENT CARD */}
+        {nextEvent && nextEvent.nextDueDate && (
+          <Pressable
+            onPress={() => router.push(`/event/${nextEvent.id}`)}
+            style={({ pressed }) => [
+              {
+                marginHorizontal: SPACING.lg,
+                marginBottom: SPACING.xl,
+                padding: SPACING.base,
+                borderRadius: RADIUS.md,
+                backgroundColor: COLORS.accentMuted,
+                borderLeftWidth: 3,
+                borderLeftColor: COLORS.accent,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: SPACING.md,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: RADIUS.sm,
+                backgroundColor: COLORS.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Bell size={16} color={COLORS.accentDark} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <StyledText variant="eyebrow" color={COLORS.accentDark}>
+                Prochain rappel
+              </StyledText>
+              <StyledText variant="bodyMedium" numberOfLines={1} style={{ marginTop: 2 }}>
+                {nextEvent.title}
+              </StyledText>
+              <StyledText variant="small">
+                {formatLongDate(nextEvent.nextDueDate)}
+              </StyledText>
+            </View>
+            <ChevronRight size={16} color={COLORS.accentDark} strokeWidth={2} />
+          </Pressable>
+        )}
+
+        {/* INFORMATIONS */}
+        {(asset.location ||
+          asset.purchasePrice !== undefined ||
+          asset.purchaseDate ||
+          asset.serialNumber) && (
+          <View style={{ marginBottom: SPACING.xl }}>
+            <StyledText
+              variant="eyebrow"
+              style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+            >
+              INFORMATIONS
+            </StyledText>
+            <Card
+              variant="outlined"
+              padding="none"
+              radius="md"
+              style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+            >
+              {asset.location && (
+                <InfoRow label="Localisation" value={asset.location} />
+              )}
+              {asset.purchaseDate && (
+                <InfoRow
+                  label="Date d'achat"
+                  value={formatLongDate(asset.purchaseDate)}
+                />
+              )}
+              {asset.purchasePrice !== undefined && (
+                <InfoRow
+                  label="Prix d'achat"
+                  value={formatEUR(asset.purchasePrice)}
+                />
+              )}
+              {asset.serialNumber && (
+                <InfoRow
+                  label="N° de série"
+                  value={asset.serialNumber}
+                  isLast
+                />
+              )}
+            </Card>
           </View>
         )}
 
-      </ScrollView>
+        {/* EXTRA DATA */}
+        {asset.extraData && (
+          <View style={{ marginBottom: SPACING.xl }}>
+            <StyledText
+              variant="eyebrow"
+              style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+            >
+              DÉTAILS
+            </StyledText>
+            <View style={{ paddingHorizontal: SPACING.lg }}>
+              <ExtraDataDisplay
+                categoryId={asset.categoryId}
+                extraData={asset.extraData as Record<string, any>}
+              />
+            </View>
+          </View>
+        )}
 
-      {/* Actions fixes en bas */}
-      <View style={styles.actionsBar}>
-        <TouchableOpacity style={styles.exportButton} onPress={handleExport}>
-          <Text style={styles.exportButtonText}>📄 PDF</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.archiveButton} onPress={handleArchive}>
-          <Text style={styles.archiveButtonText}>Archiver</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-          <Text style={styles.deleteButtonText}>Supprimer</Text>
-        </TouchableOpacity>
+        {/* HISTORIQUE */}
+        <View style={{ marginBottom: SPACING.xl }}>
+          <View style={{ paddingHorizontal: SPACING.lg }}>
+            <SectionHeader
+              eyebrow={`Historique (${assetEvents.length})`}
+              actionLabel="+ Ajouter"
+              onActionPress={() =>
+                router.push({ pathname: '/event/add', params: { assetId: asset.id } })
+              }
+            />
+          </View>
+
+          {assetEvents.length > 0 && (
+            <View style={{ paddingHorizontal: SPACING.lg, marginBottom: SPACING.sm }}>
+              <Pressable
+                onPress={handleEventSort}
+                hitSlop={8}
+                style={({ pressed }) => [
+                  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+                  pressed && { opacity: 0.5 },
+                ]}
+              >
+                <StyledText variant="caption" color={COLORS.textSecondary}>
+                  Tri : {EVENT_SORT_LABELS[eventSort]}
+                </StyledText>
+              </Pressable>
+            </View>
+          )}
+
+          {assetEvents.length === 0 ? (
+            <View
+              style={{
+                paddingHorizontal: SPACING.lg,
+                paddingVertical: SPACING.xxl,
+                alignItems: 'center',
+              }}
+            >
+              <StyledText variant="body" color={COLORS.textSecondary} align="center">
+                Aucun événement enregistré.
+              </StyledText>
+              <Pressable
+                onPress={() =>
+                  router.push({
+                    pathname: '/event/add',
+                    params: { assetId: asset.id },
+                  })
+                }
+                style={({ pressed }) => [
+                  {
+                    marginTop: SPACING.md,
+                    paddingHorizontal: SPACING.lg,
+                    paddingVertical: SPACING.sm + 2,
+                    backgroundColor: COLORS.primary,
+                    borderRadius: RADIUS.sm,
+                  },
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                <StyledText variant="smallMedium" color={COLORS.textInverse}>
+                  Ajouter un événement
+                </StyledText>
+              </Pressable>
+            </View>
+          ) : (
+            <Card
+              variant="outlined"
+              padding="none"
+              radius="md"
+              style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
+            >
+              {sortedEvents.map((event, idx) => {
+                const day = event.eventDate.split('-')[2] ?? '';
+                const costLabel =
+                  event.cost !== undefined && event.cost > 0
+                    ? formatEUR(event.cost)
+                    : undefined;
+                return (
+                  <EventListItem
+                    key={event.id}
+                    day={day}
+                    title={event.title}
+                    costLabel={costLabel}
+                    eventType={event.eventType as unknown as string}
+                    onPress={() => router.push(`/event/${event.id}`)}
+                    isLast={idx === sortedEvents.length - 1}
+                  />
+                );
+              })}
+            </Card>
+          )}
+        </View>
+
+        {/* PIÈCES JOINTES */}
+        <View style={{ marginBottom: SPACING.xl }}>
+          <StyledText
+            variant="eyebrow"
+            style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+          >
+            PIÈCES JOINTES
+          </StyledText>
+          <View style={{ paddingHorizontal: SPACING.lg }}>
+            <AttachmentsSection
+              attachments={attachments}
+              assetId={id}
+              onChanged={loadAttachments}
+            />
+          </View>
+        </View>
+
+        {/* NOTES */}
+        {asset.notes && (
+          <View style={{ marginBottom: SPACING.xl }}>
+            <StyledText
+              variant="eyebrow"
+              style={{ marginBottom: SPACING.sm, paddingHorizontal: SPACING.lg }}
+            >
+              NOTES
+            </StyledText>
+            <Card
+              variant="outlined"
+              padding="base"
+              radius="md"
+              style={{ marginHorizontal: SPACING.lg }}
+            >
+              <StyledText variant="body">{asset.notes}</StyledText>
+            </Card>
+          </View>
+        )}
+
+        {/* ACTIONS */}
+        <SettingsGroup title="ACTIONS">
+          <SettingsItem
+            icon={FileText}
+            label="Exporter en PDF"
+            onPress={handleExportPDF}
+          />
+          <SettingsItem
+            icon={Archive}
+            label="Archiver le bien"
+            onPress={handleArchive}
+          />
+          <SettingsItem
+            icon={Trash2}
+            label="Supprimer le bien"
+            variant="danger"
+            onPress={handleDelete}
+            isLast
+          />
+        </SettingsGroup>
+      </Screen>
+
+      {/* STICKY BOTTOM CTA */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: SPACING.lg,
+          paddingTop: SPACING.md,
+          paddingBottom: SPACING.lg,
+          backgroundColor: COLORS.background,
+          borderTopWidth: 1,
+          borderTopColor: COLORS.border,
+        }}
+      >
+        <Pressable
+          onPress={() => router.push(`/asset/edit/${asset.id}`)}
+          style={({ pressed }) => [
+            {
+              backgroundColor: COLORS.primary,
+              borderRadius: RADIUS.md,
+              paddingVertical: SPACING.md,
+              alignItems: 'center',
+              ...SHADOWS.sm,
+            },
+            pressed && { opacity: 0.9 },
+          ]}
+        >
+          <StyledText variant="title" color={COLORS.textInverse}>
+            Modifier le bien
+          </StyledText>
+        </Pressable>
       </View>
-
     </View>
   );
 }
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1 },
-  content: { padding: spacing.md, paddingBottom: spacing.md },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  errorText: { color: colors.textSecondary, fontSize: fontSize.md },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    ...shadow.sm,
-  },
-  headerIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  coverImage: { width: 56, height: 56, borderRadius: radius.md },
-  cameraOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cameraIcon: { fontSize: 11 },
-  headerIconText: { fontSize: 28 },
-  headerInfo: { flex: 1 },
-  headerName: { fontSize: fontSize.lg, fontWeight: fontWeight.bold, color: colors.text },
-  headerCategory: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  headerBrand: { fontSize: fontSize.sm, color: colors.textTertiary, marginTop: 2 },
-  editButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  editButtonText: { color: colors.primary, fontSize: fontSize.sm, fontWeight: fontWeight.medium },
-  statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  statValue: { fontSize: fontSize.xl, fontWeight: fontWeight.bold, color: colors.text },
-  statLabel: { fontSize: fontSize.xs, color: colors.textSecondary, marginTop: 2 },
-  nextEventCard: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
-  },
-  nextEventLabel: { fontSize: fontSize.xs, color: colors.primary, fontWeight: fontWeight.semibold, marginBottom: 4 },
-  nextEventTitle: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text },
-  nextEventDate: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  detailsCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-  },
-  section: { marginBottom: spacing.lg },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  sectionHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  sectionTitle: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.text, marginBottom: spacing.sm },
-  sortChip: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radius.full,
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  sortChipText: { fontSize: fontSize.xs, color: colors.textSecondary, fontWeight: fontWeight.medium },
-  addEventLink: { fontSize: fontSize.sm, color: colors.primary, fontWeight: fontWeight.medium },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.xs },
-  detailLabel: { fontSize: fontSize.sm, color: colors.textSecondary },
-  detailValue: { fontSize: fontSize.sm, color: colors.text, fontWeight: fontWeight.medium },
-  emptyEvents: { alignItems: 'center', paddingVertical: spacing.lg },
-  emptyEventsText: { fontSize: fontSize.sm, color: colors.textSecondary, marginBottom: spacing.md },
-  addEventButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-  },
-  addEventButtonText: { color: colors.white, fontWeight: fontWeight.semibold, fontSize: fontSize.sm },
-  eventCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    ...shadow.sm,
-  },
-  eventIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceAlt,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  eventInfo: { flex: 1 },
-  eventTitle: { fontSize: fontSize.md, fontWeight: fontWeight.medium, color: colors.text },
-  eventDate: { fontSize: fontSize.sm, color: colors.textSecondary, marginTop: 2 },
-  eventProvider: { fontSize: fontSize.sm, color: colors.textTertiary, marginTop: 2 },
-  eventRight: { alignItems: 'flex-end', gap: 4 },
-  eventCost: { fontSize: fontSize.md, fontWeight: fontWeight.semibold, color: colors.accent },
-  eventBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.full },
-  eventBadgePast: { backgroundColor: colors.surfaceAlt },
-  eventBadgeUpcoming: { backgroundColor: colors.primaryLight },
-  eventBadgeText: { fontSize: fontSize.xs, fontWeight: fontWeight.medium },
-  eventBadgeTextPast: { color: colors.textSecondary },
-  eventBadgeTextUpcoming: { color: colors.primary },
-  notesText: { fontSize: fontSize.md, color: colors.text, lineHeight: 22 },
-  actionsBar: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    padding: spacing.md,
-    paddingBottom: 32,
-    backgroundColor: colors.background,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  exportButton: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryLight,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  exportButtonText: { color: colors.primary, fontWeight: fontWeight.medium },
-  archiveButton: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-  },
-  archiveButtonText: { color: colors.textSecondary, fontWeight: fontWeight.medium },
-  deleteButton: {
-    flex: 1,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.dangerLight,
-    alignItems: 'center',
-  },
-  deleteButtonText: { color: colors.danger, fontWeight: fontWeight.medium },
-});

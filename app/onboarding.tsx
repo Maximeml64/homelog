@@ -1,7 +1,6 @@
 // app/onboarding.tsx
 
-import { router } from 'expo-router';
-import { useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -9,39 +8,61 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  Pressable,
   ScrollView,
-  StyleSheet,
-  Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+import { router } from 'expo-router';
+import {
+  ArrowRight,
+  Bell,
+  Camera,
+  Home,
+  Sparkles,
+} from 'lucide-react-native';
+import { LucideIcon } from 'lucide-react-native';
+import { Separator, StyledText } from '../components/ui';
+import {
+  COLORS,
+  FONTS,
+  RADIUS,
+  SHADOWS,
+  SPACING,
+} from '../constants/theme';
 import { requestNotificationPermission } from '../src/services/notificationService';
 import { useAppStore } from '../src/stores/appStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const FEATURES = [
+interface Slide {
+  eyebrow: string;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+const SLIDES: Slide[] = [
   {
-    icon: '🏠',
-    title: 'Tous vos biens',
-    description: 'Voiture, chaudière, électroménager, animaux… centralisez tout en un endroit.',
+    eyebrow: 'CARNET DE PATRIMOINE',
+    title: 'Votre maison,\nun carnet de bord.',
+    description:
+      'Centralisez vos biens, vos factures et vos entretiens. 100% privé, 100% local — sans compte ni cloud.',
+    icon: Home,
   },
   {
-    icon: '🔔',
-    title: 'Rappels intelligents',
-    description: 'Ne ratez plus jamais un entretien ou une échéance importante.',
+    eyebrow: 'IA INTÉGRÉE',
+    title: 'Photographiez\nvos factures.',
+    description:
+      'Notre IA pré-remplit automatiquement marque, modèle, prix et catégorie. Plus rien à recopier.',
+    icon: Camera,
   },
   {
-    icon: '📄',
-    title: 'Historique & documents',
-    description: 'Conservez factures, photos et notes. Exportez en PDF en un tap.',
-  },
-  {
-    icon: '📊',
-    title: 'Vue complète',
-    description: 'Suivez vos dépenses par bien et par catégorie, sur l\'année.',
+    eyebrow: 'RAPPELS INTELLIGENTS',
+    title: 'Ne ratez plus\nun entretien.',
+    description:
+      'Vidanges, contrôles, garanties — recevez une notification au bon moment, automatiquement.',
+    icon: Bell,
   },
 ];
 
@@ -52,19 +73,25 @@ export default function OnboardingScreen() {
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
+  const totalSlides = SLIDES.length + 1;
+  const isLastSlide = currentSlide === SLIDES.length;
+
   function goToSlide(index: number) {
-    scrollRef.current?.scrollTo({ x: index * SCREEN_WIDTH, animated: true });
+    scrollRef.current?.scrollTo({
+      x: index * SCREEN_WIDTH,
+      animated: true,
+    });
     setCurrentSlide(index);
   }
 
   function handleScroll(e: NativeSyntheticEvent<NativeScrollEvent>) {
     const slide = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-    setCurrentSlide(slide);
+    if (slide !== currentSlide) setCurrentSlide(slide);
   }
 
   async function handleStart() {
     if (!name.trim()) {
-      Alert.alert('Champ requis', 'Entre ton prénom pour continuer.');
+      Alert.alert('Champ requis', 'Entrez votre prénom pour continuer.');
       return;
     }
     setLoading(true);
@@ -72,7 +99,7 @@ export default function OnboardingScreen() {
       await requestNotificationPermission();
       await completeOnboarding(name.trim());
       router.replace('/(tabs)');
-    } catch (e) {
+    } catch {
       Alert.alert('Erreur', 'Impossible de continuer.');
     } finally {
       setLoading(false);
@@ -80,7 +107,7 @@ export default function OnboardingScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -90,257 +117,268 @@ export default function OnboardingScreen() {
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Slide 1 — Hero */}
-        <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
-          <View style={styles.heroContent}>
-            <Text style={styles.heroIcon}>🏠</Text>
-            <Text style={styles.heroTitle}>Homelog</Text>
-            <Text style={styles.heroSubtitle}>
-              Le carnet de bord de votre maison.{'\n'}
-              Simple, privé, toujours avec vous.
-            </Text>
-            <View style={styles.heroBadges}>
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>🔒 Données locales</Text>
+        {/* Slides éditoriales */}
+        {SLIDES.map((slide, idx) => {
+          const Icon = slide.icon;
+          return (
+            <View
+              key={idx}
+              style={{
+                width: SCREEN_WIDTH,
+                paddingHorizontal: SPACING.xl,
+                paddingTop: 100,
+                paddingBottom: 140,
+                justifyContent: 'flex-start',
+              }}
+            >
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: COLORS.accentMuted,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: SPACING.xl,
+                }}
+              >
+                <Icon
+                  size={28}
+                  color={COLORS.accentDark}
+                  strokeWidth={1.5}
+                />
               </View>
-              <View style={styles.heroBadge}>
-                <Text style={styles.heroBadgeText}>📱 Sans compte</Text>
-              </View>
+
+              <StyledText variant="eyebrow" color={COLORS.accentDark}>
+                {slide.eyebrow}
+              </StyledText>
+
+              <Separator
+                variant="accent"
+                width={32}
+                style={{ marginTop: SPACING.md, marginBottom: SPACING.lg }}
+              />
+
+              <StyledText
+                variant="h1"
+                style={{ fontSize: 36, lineHeight: 42 }}
+              >
+                {slide.title}
+              </StyledText>
+
+              <StyledText
+                variant="body"
+                color={COLORS.textSecondary}
+                style={{
+                  marginTop: SPACING.lg,
+                  fontSize: 16,
+                  lineHeight: 24,
+                }}
+              >
+                {slide.description}
+              </StyledText>
             </View>
-          </View>
-          <TouchableOpacity style={styles.nextButton} onPress={() => goToSlide(1)}>
-            <Text style={styles.nextButtonText}>Découvrir →</Text>
-          </TouchableOpacity>
-        </View>
+          );
+        })}
 
-        {/* Slide 2 — Features */}
-        <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
-          <View style={styles.featuresContent}>
-            <Text style={styles.featuresTitle}>Tout ce dont vous avez besoin</Text>
-            {FEATURES.map((f, i) => (
-              <View key={i} style={styles.featureRow}>
-                <View style={styles.featureIconBox}>
-                  <Text style={styles.featureIcon}>{f.icon}</Text>
-                </View>
-                <View style={styles.featureText}>
-                  <Text style={styles.featureTitle}>{f.title}</Text>
-                  <Text style={styles.featureDesc}>{f.description}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-          <TouchableOpacity style={styles.nextButton} onPress={() => goToSlide(2)}>
-            <Text style={styles.nextButtonText}>Commencer →</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Slide 3 — Prénom */}
+        {/* Slide finale prénom */}
         <KeyboardAvoidingView
           style={{ width: SCREEN_WIDTH }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          <View style={styles.slide}>
-            <View style={styles.nameContent}>
-              <Text style={styles.nameTitle}>Comment vous{'\n'}appelez-vous ?</Text>
-              <Text style={styles.nameSubtitle}>
-                Pour personnaliser votre expérience
-              </Text>
+          <View
+            style={{
+              flex: 1,
+              paddingHorizontal: SPACING.xl,
+              paddingTop: 100,
+              paddingBottom: 140,
+            }}
+          >
+            <View
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: RADIUS.full,
+                backgroundColor: COLORS.primaryMuted,
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: SPACING.xl,
+              }}
+            >
+              <Sparkles
+                size={28}
+                color={COLORS.primary}
+                strokeWidth={1.5}
+              />
+            </View>
+
+            <StyledText variant="eyebrow">BIENVENUE</StyledText>
+
+            <Separator
+              variant="accent"
+              width={32}
+              style={{ marginTop: SPACING.md, marginBottom: SPACING.lg }}
+            />
+
+            <StyledText variant="h1" style={{ fontSize: 36, lineHeight: 42 }}>
+              Comment vous{'\n'}appelez-vous ?
+            </StyledText>
+
+            <StyledText
+              variant="body"
+              color={COLORS.textSecondary}
+              style={{
+                marginTop: SPACING.lg,
+                fontSize: 16,
+                lineHeight: 24,
+              }}
+            >
+              Juste votre prénom — pour personnaliser
+              vos écrans. Rien n'est envoyé en ligne.
+            </StyledText>
+
+            <View style={{ marginTop: SPACING.xxl }}>
+              <StyledText
+                variant="eyebrow"
+                style={{ marginBottom: SPACING.xs }}
+              >
+                PRÉNOM
+              </StyledText>
               <TextInput
-                style={styles.input}
                 value={name}
                 onChangeText={setName}
                 placeholder="Votre prénom"
-                placeholderTextColor={colors.textTertiary}
+                placeholderTextColor={COLORS.textTertiary}
                 autoCapitalize="words"
                 returnKeyType="done"
                 onSubmitEditing={handleStart}
+                style={{
+                  fontFamily: FONTS.serifMedium,
+                  fontSize: 24,
+                  lineHeight: 30,
+                  color: COLORS.text,
+                  paddingVertical: SPACING.sm,
+                  borderBottomWidth: 1,
+                  borderBottomColor: COLORS.borderStrong,
+                }}
               />
-              <Text style={styles.legal}>
-                Vos données restent sur votre appareil.{'\n'}Aucun compte requis.
-              </Text>
+              <StyledText
+                variant="caption"
+                color={COLORS.textTertiary}
+                style={{ marginTop: SPACING.md }}
+              >
+                Vos données restent sur votre appareil.
+                Aucun compte requis.
+              </StyledText>
             </View>
-            <TouchableOpacity
-              style={[styles.startButton, (!name.trim() || loading) && styles.startButtonDisabled]}
-              onPress={handleStart}
-              disabled={!name.trim() || loading}
-            >
-              <Text style={styles.startButtonText}>
-                {loading ? 'Chargement…' : 'Démarrer Homelog →'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
       </ScrollView>
 
-      {/* Pagination dots */}
-      <View style={styles.dots}>
-        {[0, 1, 2].map(i => (
-          <TouchableOpacity key={i} onPress={() => goToSlide(i)}>
-            <View style={[styles.dot, currentSlide === i && styles.dotActive]} />
-          </TouchableOpacity>
-        ))}
+      {/* Footer : pagination + CTA */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: SPACING.xl,
+          paddingBottom: SPACING.xxl,
+          paddingTop: SPACING.md,
+          backgroundColor: COLORS.background,
+        }}
+      >
+        {/* Dots */}
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            gap: SPACING.xs,
+            marginBottom: SPACING.lg,
+          }}
+        >
+          {Array.from({ length: totalSlides }).map((_, i) => (
+            <Pressable
+              key={i}
+              onPress={() => goToSlide(i)}
+              hitSlop={8}
+            >
+              <View
+                style={{
+                  width: currentSlide === i ? 24 : 8,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor:
+                    currentSlide === i
+                      ? COLORS.primary
+                      : COLORS.borderStrong,
+                }}
+              />
+            </Pressable>
+          ))}
+        </View>
+
+        {/* CTA */}
+        {isLastSlide ? (
+          <Pressable
+            onPress={handleStart}
+            disabled={!name.trim() || loading}
+            style={({ pressed }) => [
+              {
+                backgroundColor:
+                  !name.trim() || loading
+                    ? COLORS.borderStrong
+                    : COLORS.primary,
+                borderRadius: RADIUS.md,
+                paddingVertical: SPACING.md,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: SPACING.sm,
+                ...SHADOWS.sm,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <StyledText variant="title" color={COLORS.textInverse}>
+              {loading ? 'Démarrage…' : 'Commencer'}
+            </StyledText>
+            {!loading && (
+              <ArrowRight
+                size={16}
+                color={COLORS.textInverse}
+                strokeWidth={2.5}
+              />
+            )}
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => goToSlide(currentSlide + 1)}
+            style={({ pressed }) => [
+              {
+                backgroundColor: COLORS.primary,
+                borderRadius: RADIUS.md,
+                paddingVertical: SPACING.md,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: SPACING.sm,
+                ...SHADOWS.sm,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <StyledText variant="title" color={COLORS.textInverse}>
+              Continuer
+            </StyledText>
+            <ArrowRight
+              size={16}
+              color={COLORS.textInverse}
+              strokeWidth={2.5}
+            />
+          </Pressable>
+        )}
       </View>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.primary },
-
-  slide: {
-    flex: 1,
-    minHeight: '100%',
-    paddingHorizontal: spacing.xl,
-    paddingTop: 80,
-    paddingBottom: 100,
-    justifyContent: 'space-between',
-  },
-
-  // Slide 1
-  heroContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  heroIcon: { fontSize: 80, marginBottom: spacing.lg },
-  heroTitle: {
-    fontSize: 48,
-    fontWeight: fontWeight.bold,
-    color: colors.white,
-    letterSpacing: -1.5,
-    marginBottom: spacing.md,
-  },
-  heroSubtitle: {
-    fontSize: fontSize.lg,
-    color: 'rgba(255,255,255,0.85)',
-    textAlign: 'center',
-    lineHeight: 26,
-    marginBottom: spacing.xl,
-  },
-  heroBadges: { flexDirection: 'row', gap: spacing.sm },
-  heroBadge: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: radius.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  heroBadgeText: {
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: fontWeight.medium,
-  },
-
-  // Slide 2
-  featuresContent: { flex: 1, justifyContent: 'center', gap: spacing.lg },
-  featuresTitle: {
-    fontSize: fontSize.xxl,
-    fontWeight: fontWeight.bold,
-    color: colors.white,
-    marginBottom: spacing.md,
-    letterSpacing: -0.5,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-  },
-  featureIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexShrink: 0,
-  },
-  featureIcon: { fontSize: 24 },
-  featureText: { flex: 1 },
-  featureTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.white,
-    marginBottom: 4,
-  },
-  featureDesc: {
-    fontSize: fontSize.sm,
-    color: 'rgba(255,255,255,0.75)',
-    lineHeight: 20,
-  },
-
-  // Slide 3
-  nameContent: { flex: 1, justifyContent: 'center' },
-  nameTitle: {
-    fontSize: 36,
-    fontWeight: fontWeight.bold,
-    color: colors.white,
-    letterSpacing: -0.5,
-    marginBottom: spacing.sm,
-    lineHeight: 42,
-  },
-  nameSubtitle: {
-    fontSize: fontSize.md,
-    color: 'rgba(255,255,255,0.75)',
-    marginBottom: spacing.xl,
-  },
-  input: {
-    backgroundColor: colors.white,
-    borderRadius: radius.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 16,
-    fontSize: fontSize.xl,
-    color: colors.text,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
-  },
-  legal: {
-    fontSize: fontSize.xs,
-    color: 'rgba(255,255,255,0.5)',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-
-  // Buttons
-  nextButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  nextButtonText: {
-    color: colors.white,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-  },
-  startButton: {
-    backgroundColor: colors.white,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    alignItems: 'center',
-    ...shadow.md,
-  },
-  startButtonDisabled: { opacity: 0.5 },
-  startButtonText: {
-    color: colors.primary,
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.bold,
-  },
-
-  // Dots
-  dots: {
-    position: 'absolute',
-    bottom: 48,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.3)',
-  },
-  dotActive: {
-    backgroundColor: colors.white,
-    width: 24,
-  },
-});

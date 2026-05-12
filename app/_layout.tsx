@@ -1,11 +1,23 @@
 // app/_layout.tsx
-
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import Constants from 'expo-constants';
 import Purchases from 'react-native-purchases';
-import { colors } from '../constants/theme';
+import {
+  useFonts,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from '@expo-google-fonts/inter';
+import {
+  IBMPlexSerif_400Regular,
+  IBMPlexSerif_500Medium,
+  IBMPlexSerif_600SemiBold,
+  IBMPlexSerif_700Bold,
+} from '@expo-google-fonts/ibm-plex-serif';
+import { COLORS } from '../constants/theme';
 import { requestNotificationPermission } from '../src/services/notificationService';
 import { useAppStore } from '../src/stores/appStore';
 
@@ -18,6 +30,17 @@ const isExpoGo =
 export default function RootLayout() {
   const { loadAppState, initRevenueCat } = useAppStore();
 
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    IBMPlexSerif_400Regular,
+    IBMPlexSerif_500Medium,
+    IBMPlexSerif_600SemiBold,
+    IBMPlexSerif_700Bold,
+  });
+
   useEffect(() => {
     if (isExpoGo) {
       console.warn('[RC] Skipping configure in Expo Go (use dev build for RC features)');
@@ -25,7 +48,6 @@ export default function RootLayout() {
       try {
         Purchases.configure({ apiKey: RC_API_KEY });
       } catch (e) {
-        // Non-fatal — log and continue
         console.warn('[RC] configure failed:', e);
       }
     }
@@ -41,15 +63,19 @@ export default function RootLayout() {
     });
   }, []);
 
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
+
   return (
     <>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
+          headerStyle: { backgroundColor: COLORS.background },
+          headerTintColor: COLORS.text,
           headerTitleStyle: { fontWeight: '600' },
-          contentStyle: { backgroundColor: colors.background },
+          contentStyle: { backgroundColor: COLORS.background },
           headerShadowVisible: false,
           headerBackTitle: 'Retour',
         }}

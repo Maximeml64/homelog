@@ -1,12 +1,16 @@
 // src/stores/appStore.ts
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import Purchases, { CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 import { create } from 'zustand';
+import { MAX_FREE_ASSETS, REVENUECAT_ENTITLEMENT_ID } from '../../constants/config';
+import { logger } from '../utils/logger';
 import { SubscriptionState } from '../types';
 
-const MAX_FREE_ASSETS = 3;
-const ENTITLEMENT_ID = 'premium';
+const isExpoGo =
+  (Constants.appOwnership as string) === 'expo' ||
+  Constants.executionEnvironment === 'storeClient';
 
 interface AppStore {
   subscription: SubscriptionState;
@@ -27,7 +31,7 @@ interface AppStore {
 }
 
 function checkPremium(customerInfo: CustomerInfo): boolean {
-  return customerInfo.entitlements.active[ENTITLEMENT_ID] !== undefined;
+  return customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_ID] !== undefined;
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -44,6 +48,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   canAddAsset: (currentCount) => {
+    if (isExpoGo) return true;
     const { isPremium } = get();
     if (isPremium) return true;
     return currentCount < MAX_FREE_ASSETS;
@@ -74,7 +79,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const packages = offerings.current?.availablePackages ?? [];
       set({ packages });
     } catch (e) {
-      // Silencieux en dev sandbox
+      logger.warn('appStore', 'initRevenueCat failed (dev sandbox?)', e);
     }
   },
 

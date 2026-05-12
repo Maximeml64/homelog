@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { CATEGORY_FIELDS, CategoryField } from '../constants/categoryFields';
-import { colors, fontSize, fontWeight, radius, spacing } from '../constants/theme';
+import { COLORS, FONTS, RADIUS, SPACING } from '../constants/theme';
 import { DatePickerInput } from './DatePickerInput';
 
 const ENERGY_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -35,9 +35,6 @@ const DPE_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
   'F': { bg: '#F37021', text: '#fff' },
   'G': { bg: '#EF4023', text: '#fff' },
 };
-
-// ExtraData stocke les dates en ISO (YYYY-MM-DD)
-// DatePickerInput travaille aussi en ISO — pas de conversion nécessaire
 
 interface Props {
   categoryId: string;
@@ -72,7 +69,7 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
                   }
                 }}
                 placeholder={field.placeholder ?? ''}
-                placeholderTextColor={colors.textTertiary}
+                placeholderTextColor={COLORS.textTertiary}
                 keyboardType={field.type === 'number' ? 'decimal-pad' : 'default'}
               />
               {field.unit && (
@@ -168,14 +165,14 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
                       styles.energyChip,
                       {
                         backgroundColor: isSelected ? ec.bg : 'transparent',
-                        borderColor: isSelected ? ec.bg : colors.border,
+                        borderColor: isSelected ? ec.bg : COLORS.border,
                       },
                     ]}
                     onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
                   >
                     <Text style={[
                       styles.energyChipText,
-                      { color: isSelected ? ec.text : colors.textSecondary, fontWeight: isSelected ? '700' : '400' },
+                      { color: isSelected ? ec.text : COLORS.textSecondary, fontWeight: isSelected ? '700' : '400' },
                     ]}>
                       {opt.label}
                     </Text>
@@ -205,14 +202,14 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
                       styles.dpeChip,
                       {
                         backgroundColor: isSelected ? dc.bg : 'transparent',
-                        borderColor: isSelected ? dc.bg : colors.border,
+                        borderColor: isSelected ? dc.bg : COLORS.border,
                       },
                     ]}
                     onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
                   >
                     <Text style={[
                       styles.dpeChipText,
-                      { color: isSelected ? dc.text : colors.textSecondary, fontWeight: isSelected ? '700' : '400' },
+                      { color: isSelected ? dc.text : COLORS.textSecondary, fontWeight: isSelected ? '700' : '400' },
                     ]}>
                       {opt.label}
                     </Text>
@@ -230,7 +227,6 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Informations détaillées</Text>
       {fields.map(renderField)}
     </View>
   );
@@ -238,24 +234,18 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: spacing.sm,
-    marginTop: spacing.sm,
+    gap: SPACING.sm,
   },
   fieldContainer: {
-    marginBottom: spacing.md,
+    marginBottom: SPACING.sm,
   },
   label: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
   },
   inputRow: {
     flexDirection: 'row',
@@ -263,105 +253,102 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    height: 44,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    fontSize: fontSize.md,
-    color: colors.text,
-    backgroundColor: colors.surface,
+    paddingVertical: 10,
+    fontFamily: FONTS.sans,
+    fontSize: 15,
+    color: COLORS.text,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   inputWithUnit: {
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-    borderRightWidth: 0,
+    marginRight: SPACING.xs,
   },
   unitBadge: {
-    height: 44,
-    paddingHorizontal: spacing.sm,
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderTopRightRadius: radius.md,
-    borderBottomRightRadius: radius.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: RADIUS.sm,
   },
   unitText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    fontFamily: FONTS.sansMedium,
+    fontSize: 12,
+    color: COLORS.textSecondary,
   },
   boolRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: SPACING.sm,
   },
   boolButton: {
     flex: 1,
     height: 40,
-    borderRadius: radius.md,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: COLORS.surface,
   },
   boolButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   boolButtonText: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
+    fontFamily: FONTS.sansMedium,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
   boolButtonTextSelected: {
-    color: colors.white,
-    fontWeight: fontWeight.semibold,
+    color: COLORS.textInverse,
+    fontFamily: FONTS.sansSemiBold,
   },
   optionsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    paddingRight: spacing.sm,
+    gap: SPACING.sm,
+    paddingRight: SPACING.sm,
   },
   optionChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: radius.full,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: COLORS.borderStrong,
+    backgroundColor: 'transparent',
   },
   optionChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   optionChipText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    fontFamily: FONTS.sansMedium,
+    fontSize: 13,
+    color: COLORS.textSecondary,
   },
   optionChipTextSelected: {
-    color: colors.white,
-    fontWeight: fontWeight.semibold,
+    color: COLORS.textInverse,
+    fontFamily: FONTS.sansSemiBold,
   },
   energyChip: {
     width: 46,
     height: 36,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   energyChipText: {
-    fontSize: fontSize.xs,
+    fontFamily: FONTS.sansMedium,
+    fontSize: 11,
   },
   dpeChip: {
     width: 40,
     height: 40,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dpeChipText: {
-    fontSize: fontSize.md,
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 15,
   },
 });
