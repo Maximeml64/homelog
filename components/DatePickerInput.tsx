@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 
 interface Props {
   value: string; // ISO format YYYY-MM-DD ou vide
@@ -43,11 +43,9 @@ function displayToIso(display: string): string {
 }
 
 export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', label }: Props) {
-  // État interne d'affichage — indépendant de la valeur ISO parent
   const [display, setDisplay] = useState(() => isoToDisplay(value));
   const isInternalChange = useRef(false);
 
-  // Sync depuis le parent uniquement si changement externe (pas depuis notre propre onChange)
   useEffect(() => {
     if (!isInternalChange.current) {
       setDisplay(isoToDisplay(value));
@@ -62,9 +60,9 @@ export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', l
 
     if (formatted.length === 10) {
       const iso = displayToIso(formatted);
-      onChange(iso); // vide si date invalide, ISO si valide
+      onChange(iso);
     } else {
-      onChange(''); // date incomplète → on vide l'ISO
+      onChange('');
     }
   }
 
@@ -77,7 +75,7 @@ export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', l
           value={display}
           onChangeText={handleChange}
           placeholder={placeholder}
-          placeholderTextColor={colors.textTertiary}
+          placeholderTextColor={COLORS.textTertiary}
           keyboardType="numeric"
           maxLength={10}
         />
@@ -89,27 +87,25 @@ export function DatePickerInput({ value, onChange, placeholder = 'JJ/MM/AAAA', l
 
 const styles = StyleSheet.create({
   label: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.medium,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    marginTop: spacing.md,
+    ...TYPOGRAPHY.smallMedium,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.xs,
+    marginTop: SPACING.md,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    ...shadow.sm,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    ...SHADOWS.sm,
   },
   input: {
     flex: 1,
     paddingVertical: 12,
-    fontSize: fontSize.md,
-    color: colors.text,
+    ...TYPOGRAPHY.body,
   },
   icon: { fontSize: 16 },
 });

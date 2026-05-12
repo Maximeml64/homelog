@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { CATEGORY_FIELDS, CategoryField } from '../constants/categoryFields';
-import { colors, fontSize, fontWeight, radius, spacing } from '../constants/theme';
+import { COLORS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import { DatePickerInput } from './DatePickerInput';
 
 const ENERGY_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
@@ -72,7 +72,7 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
                   }
                 }}
                 placeholder={field.placeholder ?? ''}
-                placeholderTextColor={colors.textTertiary}
+                placeholderTextColor={COLORS.textTertiary}
                 keyboardType={field.type === 'number' ? 'decimal-pad' : 'default'}
               />
               {field.unit && (
@@ -168,14 +168,14 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
                       styles.energyChip,
                       {
                         backgroundColor: isSelected ? ec.bg : 'transparent',
-                        borderColor: isSelected ? ec.bg : colors.border,
+                        borderColor: isSelected ? ec.bg : COLORS.border,
                       },
                     ]}
                     onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
                   >
                     <Text style={[
                       styles.energyChipText,
-                      { color: isSelected ? ec.text : colors.textSecondary, fontWeight: isSelected ? '700' : '400' },
+                      { color: isSelected ? ec.text : COLORS.textSecondary },
                     ]}>
                       {opt.label}
                     </Text>
@@ -205,14 +205,14 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
                       styles.dpeChip,
                       {
                         backgroundColor: isSelected ? dc.bg : 'transparent',
-                        borderColor: isSelected ? dc.bg : colors.border,
+                        borderColor: isSelected ? dc.bg : COLORS.border,
                       },
                     ]}
                     onPress={() => onChange(field.key, isSelected ? undefined : opt.value)}
                   >
                     <Text style={[
                       styles.dpeChipText,
-                      { color: isSelected ? dc.text : colors.textSecondary, fontWeight: isSelected ? '700' : '400' },
+                      { color: isSelected ? dc.text : COLORS.textSecondary },
                     ]}>
                       {opt.label}
                     </Text>
@@ -238,24 +238,19 @@ export function ExtraDataForm({ categoryId, values, onChange }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: spacing.sm,
+    marginTop: SPACING.sm,
   },
   sectionTitle: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.semibold,
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: spacing.sm,
-    marginTop: spacing.sm,
+    ...TYPOGRAPHY.eyebrow,
+    marginBottom: SPACING.sm,
+    marginTop: SPACING.sm,
   },
   fieldContainer: {
-    marginBottom: spacing.md,
+    marginBottom: SPACING.md,
   },
   label: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
+    ...TYPOGRAPHY.small,
+    marginBottom: SPACING.xs,
   },
   inputRow: {
     flexDirection: 'row',
@@ -265,12 +260,11 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    fontSize: fontSize.md,
-    color: colors.text,
-    backgroundColor: colors.surface,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.md,
+    ...TYPOGRAPHY.body,
+    backgroundColor: COLORS.surface,
   },
   inputWithUnit: {
     borderTopRightRadius: 0,
@@ -279,89 +273,87 @@ const styles = StyleSheet.create({
   },
   unitBadge: {
     height: 44,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: SPACING.sm,
     justifyContent: 'center',
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: COLORS.surfaceAlt,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderTopRightRadius: radius.md,
-    borderBottomRightRadius: radius.md,
+    borderColor: COLORS.border,
+    borderTopRightRadius: RADIUS.md,
+    borderBottomRightRadius: RADIUS.md,
   },
   unitText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    ...TYPOGRAPHY.small,
   },
   boolRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: SPACING.sm,
   },
   boolButton: {
     flex: 1,
     height: 40,
-    borderRadius: radius.md,
+    borderRadius: RADIUS.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: COLORS.surface,
   },
   boolButtonSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   boolButtonText: {
-    fontSize: fontSize.md,
-    color: colors.textSecondary,
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
   },
   boolButtonTextSelected: {
-    color: colors.white,
-    fontWeight: fontWeight.semibold,
+    ...TYPOGRAPHY.bodyMedium,
+    color: COLORS.textInverse,
   },
   optionsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
-    paddingRight: spacing.sm,
+    gap: SPACING.sm,
+    paddingRight: SPACING.sm,
   },
   optionChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: radius.full,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
   },
   optionChipSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
   },
   optionChipText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    ...TYPOGRAPHY.small,
   },
   optionChipTextSelected: {
-    color: colors.white,
-    fontWeight: fontWeight.semibold,
+    ...TYPOGRAPHY.smallMedium,
+    color: COLORS.textInverse,
   },
   energyChip: {
     width: 46,
     height: 36,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   energyChipText: {
-    fontSize: fontSize.xs,
+    ...TYPOGRAPHY.caption,
   },
   dpeChip: {
     width: 40,
     height: 40,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dpeChipText: {
-    fontSize: fontSize.md,
+    ...TYPOGRAPHY.bodyMedium,
   },
 });

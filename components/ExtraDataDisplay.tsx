@@ -3,7 +3,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CATEGORY_FIELDS } from '../constants/categoryFields';
-import { colors, fontSize, fontWeight, radius, spacing } from '../constants/theme';
+import { COLORS, FONTS, RADIUS, SPACING, TYPOGRAPHY } from '../constants/theme';
 
 const ENERGY_CLASS_COLORS: Record<string, { bg: string; text: string }> = {
   'A+++': { bg: '#00A651', text: '#fff' },
@@ -107,46 +107,42 @@ export function ExtraDataDisplay({ categoryId, extraData }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
   },
   sectionTitle: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
-    marginBottom: spacing.sm,
+    ...TYPOGRAPHY.eyebrow,
+    marginBottom: SPACING.sm,
   },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.xs,
+    paddingVertical: SPACING.xs,
     borderBottomWidth: 0.5,
-    borderBottomColor: colors.border,
+    borderBottomColor: COLORS.border,
   },
   detailLabel: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    ...TYPOGRAPHY.small,
     flex: 1,
   },
   detailValue: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-    fontWeight: fontWeight.medium,
+    ...TYPOGRAPHY.smallMedium,
     textAlign: 'right',
     flex: 1,
   },
   classBadge: {
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     minWidth: 36,
     alignItems: 'center',
   },
   classBadgeText: {
-    fontSize: fontSize.sm,
-    fontWeight: fontWeight.bold,
+    fontFamily: FONTS.sansBold,
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

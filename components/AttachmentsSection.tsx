@@ -12,7 +12,7 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { colors, fontSize, fontWeight, radius, shadow, spacing } from '../constants/theme';
+import { COLORS, RADIUS, SHADOWS, SPACING, TYPOGRAPHY } from '../constants/theme';
 import {
     createAttachment,
     deleteAttachment,
@@ -143,7 +143,7 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
         fileName: data.fileName,
       });
       onChanged();
-    } catch (e: any) {
+    } catch {
       Alert.alert('Erreur', 'Impossible de sauvegarder la pièce jointe.');
     } finally {
       setLoading(false);
@@ -233,50 +233,46 @@ export default function AttachmentsSection({ attachments, eventId, assetId, onCh
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-    ...shadow.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    ...SHADOWS.sm,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: SPACING.sm,
   },
   title: {
-    fontSize: fontSize.md,
-    fontWeight: fontWeight.semibold,
-    color: colors.text,
+    ...TYPOGRAPHY.title,
   },
   addButton: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: colors.primary,
+    borderColor: COLORS.primary,
   },
   addButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.primary,
-    fontWeight: fontWeight.medium,
+    ...TYPOGRAPHY.smallMedium,
+    color: COLORS.primary,
   },
   emptyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
   },
   emptyIcon: { fontSize: 20 },
   emptyText: {
-    fontSize: fontSize.sm,
-    color: colors.textSecondary,
+    ...TYPOGRAPHY.small,
   },
   list: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: SPACING.sm,
   },
   item: {
     alignItems: 'center',
@@ -285,22 +281,21 @@ const styles = StyleSheet.create({
   thumbnail: {
     width: 64,
     height: 64,
-    borderRadius: radius.sm,
+    borderRadius: RADIUS.sm,
     marginBottom: 4,
   },
   iconContainer: {
     width: 64,
     height: 64,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceAlt,
+    borderRadius: RADIUS.sm,
+    backgroundColor: COLORS.surfaceAlt,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
   },
   icon: { fontSize: 28 },
   itemLabel: {
-    fontSize: 10,
-    color: colors.textSecondary,
+    ...TYPOGRAPHY.caption,
     textAlign: 'center',
     width: 64,
   },
