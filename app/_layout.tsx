@@ -2,6 +2,7 @@
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Constants from 'expo-constants';
 import Purchases from 'react-native-purchases';
 import {
@@ -68,7 +69,7 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -93,6 +94,6 @@ export default function RootLayout() {
         <Stack.Screen name="event/edit/[id]" options={{ title: "Modifier l'événement", presentation: 'modal' }} />
         <Stack.Screen name="paywall" options={{ title: 'Premium', presentation: 'modal' }} />
       </Stack>
-    </>
+    </GestureHandlerRootView>
   );
 }

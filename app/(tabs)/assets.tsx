@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
   ScrollView,
@@ -6,9 +6,11 @@ import {
   ActionSheetIOS,
   Alert,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
-import { Plus, Camera } from 'lucide-react-native';
+import { Plus, Camera, Trash2 } from 'lucide-react-native';
 import {
   Screen,
   StyledText,
@@ -47,11 +49,94 @@ function getBrandModel(asset: Asset): string | undefined {
   return undefined;
 }
 
+// ==================== SWIPE-TO-DELETE ROW ====================
+
+interface SwipeableAssetRowProps {
+  asset: Asset;
+  isLast: boolean;
+  onPress: () => void;
+  onDelete: () => void;
+}
+
+function SwipeableAssetRow({ asset, isLast, onPress, onDelete }: SwipeableAssetRowProps) {
+  const swipeRef = useRef<Swipeable>(null);
+
+  const confirmDelete = useCallback(() => {
+    Alert.alert(
+      'Supprimer ce bien',
+      `Voulez-vous vraiment supprimer "${asset.name}" ? Cette action est définitive.`,
+      [
+        {
+          text: 'Annuler',
+          style: 'cancel',
+          onPress: () => swipeRef.current?.close(),
+        },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: () => {
+            swipeRef.current?.close();
+            onDelete();
+          },
+        },
+      ],
+    );
+  }, [asset.name, onDelete]);
+
+  const renderRightActions = useCallback(() => (
+    <TouchableOpacity
+      onPress={confirmDelete}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel="Supprimer le bien"
+      style={{
+        width: 84,
+        backgroundColor: COLORS.danger,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+      }}
+    >
+      <Trash2 color="#fff" size={22} strokeWidth={2} />
+      <StyledText
+        variant="caption"
+        color="#fff"
+        style={{ fontWeight: '700', letterSpacing: 0.3 }}
+      >
+        Supprimer
+      </StyledText>
+    </TouchableOpacity>
+  ), [confirmDelete]);
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      rightThreshold={40}
+      friction={2}
+      overshootRight={false}
+    >
+      <View style={{ backgroundColor: COLORS.surface }}>
+        <AssetListItem
+          imageUri={asset.coverImageUri}
+          name={asset.name}
+          category={getCategoryLabel(asset.categoryId)}
+          categoryId={asset.categoryId}
+          brandModel={getBrandModel(asset)}
+          onPress={onPress}
+          isLast={isLast}
+        />
+      </View>
+    </Swipeable>
+  );
+}
+
 export default function AssetsScreen() {
   const assets = useAssetStore((s) => s.assets);
   const assetCount = useAssetStore((s) => s.assetCount);
   const fetchAssets = useAssetStore((s) => s.fetchAssets);
   const fetchAssetCount = useAssetStore((s) => s.fetchAssetCount);
+  const removeAsset = useAssetStore((s) => s.removeAsset);
   const canAddAsset = useAppStore((s) => s.canAddAsset);
 
   const [search, setSearch] = useState('');
@@ -132,6 +217,18 @@ export default function AssetsScreen() {
   const handleScan = () => {
     router.push('/asset/scan-invoice');
   };
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      try {
+        await removeAsset(id);
+        await fetchAssetCount();
+      } catch {
+        Alert.alert('Erreur', "Impossible de supprimer ce bien.");
+      }
+    },
+    [removeAsset, fetchAssetCount],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -256,15 +353,12 @@ export default function AssetsScreen() {
             style={{ marginHorizontal: SPACING.lg, overflow: 'hidden' }}
           >
             {visibleAssets.map((asset, idx) => (
-              <AssetListItem
+              <SwipeableAssetRow
                 key={asset.id}
-                imageUri={asset.coverImageUri}
-                name={asset.name}
-                category={getCategoryLabel(asset.categoryId)}
-                categoryId={asset.categoryId}
-                brandModel={getBrandModel(asset)}
-                onPress={() => router.push(`/asset/${asset.id}`)}
+                asset={asset}
                 isLast={idx === visibleAssets.length - 1}
+                onPress={() => router.push(`/asset/${asset.id}`)}
+                onDelete={() => handleDelete(asset.id)}
               />
             ))}
           </Card>
