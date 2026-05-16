@@ -4,18 +4,19 @@ import React, { useCallback, useState } from 'react';
 import { Alert, Linking, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import {
-  CreditCard,
-  RotateCcw,
-  Package,
   Activity,
-  FileText,
-  FileSpreadsheet,
   Archive,
   BellOff,
-  Mail,
   Bug,
-  Shield,
+  CreditCard,
+  Database,
+  FileSpreadsheet,
+  FileText,
+  Mail,
+  Package,
+  RotateCcw,
   ScrollText,
+  Shield,
 } from 'lucide-react-native';
 import {
   Screen,
@@ -31,7 +32,8 @@ import {
   SUPPORT_EMAIL,
   TERMS_URL,
 } from '../../constants/config';
-import { getEventsByAsset } from '../../src/repositories/eventRepository';
+import { getAllEvents } from '../../src/repositories/eventRepository';
+import { exportBackup } from '../../src/services/backupService';
 import { exportCSV } from '../../src/services/csvService';
 import { cancelAllReminders } from '../../src/services/notificationService';
 import { exportAllPDF } from '../../src/services/pdfService';
@@ -47,6 +49,7 @@ export default function SettingsScreen() {
   const { events, fetchAllEvents } = useEventStore();
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -56,9 +59,15 @@ export default function SettingsScreen() {
   );
 
   async function buildEventsMap(): Promise<Record<string, MaintenanceEvent[]>> {
+    const allEvents = await getAllEvents();
     const eventsMap: Record<string, MaintenanceEvent[]> = {};
     for (const asset of assets) {
-      eventsMap[asset.id] = await getEventsByAsset(asset.id);
+      eventsMap[asset.id] = [];
+    }
+    for (const event of allEvents) {
+      if (eventsMap[event.assetId]) {
+        eventsMap[event.assetId].push(event);
+      }
     }
     return eventsMap;
   }
@@ -109,6 +118,28 @@ export default function SettingsScreen() {
       Alert.alert('Erreur', 'Impossible de générer le CSV.');
     } finally {
       setIsExporting(false);
+    }
+  }
+
+  async function handleBackup() {
+    if (assets.length === 0) {
+      Alert.alert(
+        'Aucun bien',
+        'Ajoutez au moins un bien avant de créer une sauvegarde.',
+      );
+      return;
+    }
+    setIsBackingUp(true);
+    try {
+      await exportBackup();
+    } catch (e: any) {
+      logger.error('settings', 'exportBackup failed', e);
+      Alert.alert(
+        'Erreur',
+        e?.message ?? 'Impossible de générer la sauvegarde.',
+      );
+    } finally {
+      setIsBackingUp(false);
     }
   }
 
@@ -193,6 +224,14 @@ export default function SettingsScreen() {
           label="Exporter en CSV (Excel)"
           onPress={handleExportCSV}
           disabled={isExporting}
+        />
+        <SettingsItem
+          icon={Database}
+          label={
+            isBackingUp ? 'Sauvegarde en cours…' : 'Sauvegarde complète (.zip)'
+          }
+          onPress={handleBackup}
+          disabled={isBackingUp}
         />
         <SettingsItem
           icon={Archive}

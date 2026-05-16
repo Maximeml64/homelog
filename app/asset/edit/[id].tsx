@@ -5,11 +5,12 @@ import { View, Alert, Pressable, ActivityIndicator } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Box } from 'lucide-react-native';
 import {
+  DateField,
+  FormSection,
   Screen,
+  SelectGrid,
   StyledText,
   TextField,
-  SelectGrid,
-  FormSection,
 } from '../../../components/ui';
 import { CATEGORY_ICON_MAP } from '../../../components/ui/CategoryIcon';
 import { ExtraDataForm } from '../../../components/ExtraDataForm';
@@ -33,6 +34,8 @@ export default function EditAssetScreen() {
   const [notes, setNotes] = useState('');
   const [extraData, setExtraData] = useState<Record<string, any>>({});
   const [coverImageUri, setCoverImageUri] = useState<string | undefined>(undefined);
+  const [purchaseDate, setPurchaseDate] = useState<string | undefined>(undefined);
+  const [warrantyEndDate, setWarrantyEndDate] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!id) { setLoading(false); return; }
@@ -48,14 +51,31 @@ export default function EditAssetScreen() {
       setNotes(asset.notes ?? '');
       setExtraData((asset.extraData as Record<string, any>) ?? {});
       setCoverImageUri(asset.coverImageUri);
+      setPurchaseDate(asset.purchaseDate);
+      setWarrantyEndDate(asset.warrantyEndDate);
     }
     setLoading(false);
   }, [id, assets]);
 
   const handleCategoryChange = (cid: AssetCategoryId) => {
     if (cid === categoryId) return;
-    setCategoryId(cid);
-    setExtraData({});
+    const hasExtraData = Object.keys(extraData).length > 0;
+    const apply = () => {
+      setCategoryId(cid);
+      setExtraData({});
+    };
+    if (!hasExtraData) {
+      apply();
+      return;
+    }
+    Alert.alert(
+      'Changer de catégorie ?',
+      'Les détails spécifiques (kilométrage, année, n° de série…) seront effacés.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Confirmer', style: 'destructive', onPress: apply },
+      ],
+    );
   };
 
   const handleExtraDataChange = (key: string, value: any) => {
@@ -89,6 +109,8 @@ export default function EditAssetScreen() {
         purchasePrice: purchasePrice.trim()
           ? parseFloat(purchasePrice.replace(',', '.'))
           : undefined,
+        purchaseDate: purchaseDate || undefined,
+        warrantyEndDate: warrantyEndDate || undefined,
         notes: notes.trim() || undefined,
         extraData:
           Object.keys(extraData).length > 0
@@ -209,6 +231,20 @@ export default function EditAssetScreen() {
             />
           </FormSection>
         )}
+
+        {/* GARANTIE */}
+        <FormSection title="GARANTIE">
+          <DateField
+            label="DATE D'ACHAT"
+            value={purchaseDate}
+            onChange={setPurchaseDate}
+          />
+          <DateField
+            label="FIN DE GARANTIE"
+            value={warrantyEndDate}
+            onChange={setWarrantyEndDate}
+          />
+        </FormSection>
 
         {/* NOTES */}
         <FormSection title="NOTES">

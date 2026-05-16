@@ -18,6 +18,7 @@ function rowToEvent(row: any): MaintenanceEvent {
     nextDueMileage: row.next_due_mileage ?? undefined,
     reminderEnabled: row.reminder_enabled === 1,
     reminderNotifId: row.reminder_notif_id ?? undefined,
+    recurrenceMonths: row.recurrence_months ?? undefined,
     status: row.status as 'past' | 'upcoming',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -92,8 +93,8 @@ export async function createEvent(
     `INSERT INTO maintenance_event (
       id, asset_id, event_type, title, event_date, cost, provider_name,
       notes, mileage_at_event, next_due_date, next_due_mileage,
-      reminder_enabled, reminder_notif_id, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      reminder_enabled, reminder_notif_id, recurrence_months, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.assetId,
@@ -108,6 +109,7 @@ export async function createEvent(
       data.nextDueMileage ?? null,
       data.reminderEnabled ? 1 : 0,
       data.reminderNotifId ?? null,
+      data.recurrenceMonths ?? null,
       data.status,
       now,
       now,
@@ -124,39 +126,30 @@ export async function updateEvent(
   const db = await getDatabase();
   const now = new Date().toISOString();
 
-  await db.runAsync(
-    `UPDATE maintenance_event SET
-      event_type = COALESCE(?, event_type),
-      title = COALESCE(?, title),
-      event_date = COALESCE(?, event_date),
-      cost = ?,
-      provider_name = ?,
-      notes = ?,
-      mileage_at_event = ?,
-      next_due_date = ?,
-      next_due_mileage = ?,
-      reminder_enabled = COALESCE(?, reminder_enabled),
-      reminder_notif_id = ?,
-      status = COALESCE(?, status),
-      updated_at = ?
-    WHERE id = ?`,
-    [
-      data.eventType ?? null,
-      data.title ?? null,
-      data.eventDate ?? null,
-      data.cost ?? null,
-      data.providerName ?? null,
-      data.notes ?? null,
-      data.mileageAtEvent ?? null,
-      data.nextDueDate ?? null,
-      data.nextDueMileage ?? null,
-      data.reminderEnabled !== undefined ? (data.reminderEnabled ? 1 : 0) : null,
-      data.reminderNotifId ?? null,
-      data.status ?? null,
-      now,
-      id,
-    ]
-  );
+  const sets: string[] = [];
+  const values: any[] = [];
+
+  if (data.eventType !== undefined) { sets.push('event_type = ?'); values.push(data.eventType); }
+  if (data.title !== undefined) { sets.push('title = ?'); values.push(data.title); }
+  if (data.eventDate !== undefined) { sets.push('event_date = ?'); values.push(data.eventDate); }
+  if (data.cost !== undefined) { sets.push('cost = ?'); values.push(data.cost ?? null); }
+  if (data.providerName !== undefined) { sets.push('provider_name = ?'); values.push(data.providerName ?? null); }
+  if (data.notes !== undefined) { sets.push('notes = ?'); values.push(data.notes ?? null); }
+  if (data.mileageAtEvent !== undefined) { sets.push('mileage_at_event = ?'); values.push(data.mileageAtEvent ?? null); }
+  if (data.nextDueDate !== undefined) { sets.push('next_due_date = ?'); values.push(data.nextDueDate ?? null); }
+  if (data.nextDueMileage !== undefined) { sets.push('next_due_mileage = ?'); values.push(data.nextDueMileage ?? null); }
+  if (data.reminderEnabled !== undefined) { sets.push('reminder_enabled = ?'); values.push(data.reminderEnabled ? 1 : 0); }
+  if (data.reminderNotifId !== undefined) { sets.push('reminder_notif_id = ?'); values.push(data.reminderNotifId ?? null); }
+  if (data.recurrenceMonths !== undefined) { sets.push('recurrence_months = ?'); values.push(data.recurrenceMonths ?? null); }
+  if (data.status !== undefined) { sets.push('status = ?'); values.push(data.status); }
+
+  if (sets.length === 0) return;
+
+  sets.push('updated_at = ?');
+  values.push(now);
+  values.push(id);
+
+  await db.runAsync(`UPDATE maintenance_event SET ${sets.join(', ')} WHERE id = ?`, values);
 }
 
 export async function deleteEvent(id: string): Promise<void> {

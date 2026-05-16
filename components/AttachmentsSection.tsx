@@ -23,6 +23,10 @@ import {
   createAttachment,
   deleteAttachment,
 } from '../src/repositories/eventRepository';
+import {
+  persistAttachment,
+  removePersistedAttachment,
+} from '../src/utils/attachmentStorage';
 import { logger } from '../src/utils/logger';
 import { Attachment } from '../src/types';
 
@@ -129,11 +133,12 @@ export default function AttachmentsSection({
   }) {
     setLoading(true);
     try {
+      const persistedUri = await persistAttachment(data.uri, data.fileName);
       await createAttachment({
         eventId,
         assetId,
         type: data.type,
-        uri: data.uri,
+        uri: persistedUri,
         mimeType: data.mimeType,
         fileName: data.fileName,
       });
@@ -169,6 +174,7 @@ export default function AttachmentsSection({
           style: 'destructive',
           onPress: async () => {
             await deleteAttachment(attachment.id);
+            await removePersistedAttachment(attachment.uri);
             onChanged();
           },
         },

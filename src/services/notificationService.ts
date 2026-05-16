@@ -29,8 +29,6 @@ export async function scheduleReminder(
   const granted = await requestNotificationPermission();
   if (!granted) return null;
 
-  await cancelReminder(id);
-
   const notifId = await Notifications.scheduleNotificationAsync({
     content: {
       title,

@@ -9,6 +9,7 @@ import {
   getAllEvents,
   getAnnualCost,
   getCostByCategory,
+  getEventById,
   getEventsByAsset,
   getMonthlyCosts,
   getTotalCostByAsset,
@@ -17,6 +18,7 @@ import {
   getUpcomingReminders,
   updateEvent,
 } from '../repositories/eventRepository';
+import { cancelReminder } from '../services/notificationService';
 import { Attachment, MaintenanceEvent } from '../types';
 
 interface EventStore {
@@ -38,6 +40,7 @@ interface EventStore {
   getTotalPatrimony: () => Promise<number>;
   addAttachment: (data: Omit<Attachment, 'id' | 'createdAt'>) => Promise<Attachment>;
   removeAttachment: (id: string) => Promise<void>;
+  clearError: () => void;
 }
 
 export const useEventStore = create<EventStore>((set, get) => ({
@@ -87,6 +90,10 @@ export const useEventStore = create<EventStore>((set, get) => ({
   },
 
   removeEvent: async (id) => {
+    const existing = await getEventById(id);
+    if (existing?.reminderNotifId) {
+      await cancelReminder(existing.reminderNotifId);
+    }
     await deleteEvent(id);
     await get().fetchUpcomingReminders();
   },
@@ -122,4 +129,6 @@ export const useEventStore = create<EventStore>((set, get) => ({
   removeAttachment: async (id) => {
     await deleteAttachment(id);
   },
+
+  clearError: () => set({ error: null }),
 }));

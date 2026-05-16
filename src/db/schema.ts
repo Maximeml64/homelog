@@ -15,6 +15,7 @@ export const CREATE_TABLES = `
     notes TEXT,
     cover_image_uri TEXT,
     extra_data TEXT,
+    warranty_end_date TEXT,
     archived INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -45,6 +46,7 @@ export const CREATE_TABLES = `
     next_due_mileage INTEGER,
     reminder_enabled INTEGER DEFAULT 0,
     reminder_notif_id TEXT,
+    recurrence_months INTEGER,
     status TEXT DEFAULT 'past',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -70,7 +72,7 @@ export const CREATE_TABLES = `
   );
 `;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const MIGRATIONS: Record<number, string[]> = {
   2: [
@@ -93,5 +95,9 @@ export const MIGRATIONS: Record<number, string[]> = {
   ],
   3: [
     `ALTER TABLE asset ADD COLUMN extra_data TEXT`,
+  ],
+  4: [
+    `ALTER TABLE asset ADD COLUMN warranty_end_date TEXT`,
+    `ALTER TABLE maintenance_event ADD COLUMN recurrence_months INTEGER`,
   ],
 };

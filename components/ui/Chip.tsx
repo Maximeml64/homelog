@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ViewStyle } from 'react-native';
 import { StyledText } from './StyledText';
-import { COLORS, RADIUS } from '../../constants/theme';
+import { COLORS, HIT_SLOP, RADIUS } from '../../constants/theme';
 
 interface ChipProps {
   label: string;
@@ -17,6 +17,7 @@ export function Chip({ label, selected, onPress, size = 'md', style }: ChipProps
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={HIT_SLOP}
       style={({ pressed }) => [
         {
           paddingVertical: paddingV,

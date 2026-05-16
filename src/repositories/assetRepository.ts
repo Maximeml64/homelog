@@ -18,6 +18,7 @@ function rowToAsset(row: any): Asset {
     notes: row.notes ?? undefined,
     coverImageUri: row.cover_image_uri ?? undefined,
     extraData: row.extra_data ? JSON.parse(row.extra_data) : undefined,
+    warrantyEndDate: row.warranty_end_date ?? undefined,
     archived: row.archived === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -82,8 +83,8 @@ export async function createAsset(
     `INSERT INTO asset (
       id, category_id, name, brand, model, purchase_date, service_start_date,
       purchase_price, location, serial_number, notes, cover_image_uri,
-      extra_data, archived, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      extra_data, warranty_end_date, archived, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.categoryId,
@@ -98,6 +99,7 @@ export async function createAsset(
       data.notes ?? null,
       data.coverImageUri ?? null,
       data.extraData ? JSON.stringify(data.extraData) : null,
+      data.warrantyEndDate ?? null,
       data.archived ? 1 : 0,
       now,
       now,
@@ -118,39 +120,30 @@ export async function updateAsset(
   const db = await getDatabase();
   const now = new Date().toISOString();
 
-  await db.runAsync(
-    `UPDATE asset SET
-      name = COALESCE(?, name),
-      brand = ?,
-      model = ?,
-      purchase_date = ?,
-      service_start_date = ?,
-      purchase_price = ?,
-      location = ?,
-      serial_number = ?,
-      notes = ?,
-      cover_image_uri = ?,
-      extra_data = ?,
-      archived = COALESCE(?, archived),
-      updated_at = ?
-    WHERE id = ?`,
-    [
-      data.name ?? null,
-      data.brand ?? null,
-      data.model ?? null,
-      data.purchaseDate ?? null,
-      data.serviceStartDate ?? null,
-      data.purchasePrice ?? null,
-      data.location ?? null,
-      data.serialNumber ?? null,
-      data.notes ?? null,
-      data.coverImageUri ?? null,
-      data.extraData !== undefined ? JSON.stringify(data.extraData) : null,
-      data.archived !== undefined ? (data.archived ? 1 : 0) : null,
-      now,
-      id,
-    ]
-  );
+  const sets: string[] = [];
+  const values: any[] = [];
+
+  if (data.categoryId !== undefined) { sets.push('category_id = ?'); values.push(data.categoryId); }
+  if (data.name !== undefined) { sets.push('name = ?'); values.push(data.name); }
+  if (data.brand !== undefined) { sets.push('brand = ?'); values.push(data.brand ?? null); }
+  if (data.model !== undefined) { sets.push('model = ?'); values.push(data.model ?? null); }
+  if (data.purchaseDate !== undefined) { sets.push('purchase_date = ?'); values.push(data.purchaseDate ?? null); }
+  if (data.serviceStartDate !== undefined) { sets.push('service_start_date = ?'); values.push(data.serviceStartDate ?? null); }
+  if (data.purchasePrice !== undefined) { sets.push('purchase_price = ?'); values.push(data.purchasePrice ?? null); }
+  if (data.location !== undefined) { sets.push('location = ?'); values.push(data.location ?? null); }
+  if (data.serialNumber !== undefined) { sets.push('serial_number = ?'); values.push(data.serialNumber ?? null); }
+  if (data.notes !== undefined) { sets.push('notes = ?'); values.push(data.notes ?? null); }
+  if (data.coverImageUri !== undefined) { sets.push('cover_image_uri = ?'); values.push(data.coverImageUri ?? null); }
+  if (data.extraData !== undefined) { sets.push('extra_data = ?'); values.push(data.extraData ? JSON.stringify(data.extraData) : null); }
+  if (data.warrantyEndDate !== undefined) { sets.push('warranty_end_date = ?'); values.push(data.warrantyEndDate ?? null); }
+  if (data.archived !== undefined) { sets.push('archived = ?'); values.push(data.archived ? 1 : 0); }
+
+  if (sets.length > 0) {
+    sets.push('updated_at = ?');
+    values.push(now);
+    values.push(id);
+    await db.runAsync(`UPDATE asset SET ${sets.join(', ')} WHERE id = ?`, values);
+  }
 
   if (data.vehicleDetails) {
     await upsertVehicleDetails(id, data.vehicleDetails);

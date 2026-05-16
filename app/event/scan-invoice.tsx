@@ -1,6 +1,6 @@
-// app/asset/scan-invoice.tsx
+// app/event/scan-invoice.tsx
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
@@ -10,10 +10,9 @@ import {
   ScrollView,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import {
-  Box,
   Camera,
   ImagePlus,
   Plus,
@@ -26,94 +25,55 @@ import {
   DateField,
   FormSection,
   Screen,
-  SelectGrid,
-  SelectGridOption,
   StyledText,
   TextField,
 } from '../../components/ui';
-import { CATEGORY_ICON_MAP } from '../../components/ui/CategoryIcon';
-import { ASSET_CATEGORIES } from '../../constants/categories';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '../../constants/theme';
 import { ApiError } from '../../src/services/apiClient';
 import { scanInvoice } from '../../src/services/invoiceScanService';
-import { useScanPrefillStore } from '../../src/stores/scanPrefillStore';
-import type { AssetCategoryId, ParsedInvoice } from '../../src/types';
+import {
+  EventPrefillData,
+  useEventScanPrefillStore,
+} from '../../src/stores/eventScanPrefillStore';
+import type { ParsedInvoice } from '../../src/types';
 
 const MAX_IMAGES = 4;
 
 type Step = 'selecting' | 'ready' | 'scanning' | 'preview';
 
-const VALID_CATEGORY_IDS = new Set<string>([
-  'realestate', 'car', 'moto', 'bike', 'scooter', 'boiler', 'ac',
-  'heatpump', 'waterheater', 'energy', 'pool', 'appliance', 'garden',
-  'multimedia', 'security', 'pet', 'other',
-]);
-
-function isValidCategoryId(
-  val: string | null | undefined,
-): val is AssetCategoryId {
-  return !!val && VALID_CATEGORY_IDS.has(val);
+interface EditableEventParse {
+  title: string;
+  eventDate: string;
+  cost: string;
+  providerName: string;
+  notes: string;
 }
 
-interface EditableParse {
-  vendor_name: string;
-  purchase_date: string;
-  item_name: string;
-  brand: string;
-  model: string;
-  serial_number: string;
-  total_ttc: string;
-  category_suggestion: AssetCategoryId | null;
-}
-
-function parsedToEditable(p: ParsedInvoice): EditableParse {
+function parsedToEditable(p: ParsedInvoice): EditableEventParse {
   return {
-    vendor_name: p.vendor_name ?? '',
-    purchase_date: p.purchase_date ?? '',
-    item_name: p.item_name ?? '',
-    brand: p.brand ?? '',
-    model: p.model ?? '',
-    serial_number: p.serial_number ?? '',
-    total_ttc: p.total_ttc != null ? String(p.total_ttc) : '',
-    category_suggestion: isValidCategoryId(p.category_suggestion)
-      ? p.category_suggestion
-      : null,
+    title: p.item_name?.trim() || '',
+    eventDate: p.purchase_date?.trim() || '',
+    cost: p.total_ttc != null ? String(p.total_ttc) : '',
+    providerName: p.vendor_name?.trim() || '',
+    notes: p.notes?.trim() || '',
   };
 }
 
-function editableToParsed(
-  edit: EditableParse,
-  original: ParsedInvoice,
-): ParsedInvoice {
-  const total = parseFloat(edit.total_ttc.replace(',', '.'));
+function editableToPrefill(edit: EditableEventParse): EventPrefillData {
   return {
-    ...original,
-    vendor_name: edit.vendor_name.trim() || null,
-    purchase_date: edit.purchase_date.trim() || null,
-    item_name: edit.item_name.trim() || null,
-    brand: edit.brand.trim() || null,
-    model: edit.model.trim() || null,
-    serial_number: edit.serial_number.trim() || null,
-    total_ttc: Number.isFinite(total) ? total : null,
-    category_suggestion: edit.category_suggestion,
+    title: edit.title.trim() || undefined,
+    eventDate: edit.eventDate.trim() || undefined,
+    cost: edit.cost.trim() || undefined,
+    providerName: edit.providerName.trim() || undefined,
+    notes: edit.notes.trim() || undefined,
   };
 }
 
-export default function ScanInvoiceScreen() {
+export default function ScanEventInvoiceScreen() {
+  const { assetId } = useLocalSearchParams<{ assetId: string }>();
   const [step, setStep] = useState<Step>('selecting');
   const [imageUris, setImageUris] = useState<string[]>([]);
-  const [parsed, setParsed] = useState<ParsedInvoice | null>(null);
-  const [editable, setEditable] = useState<EditableParse | null>(null);
-
-  const categoryOptions: SelectGridOption[] = useMemo(
-    () =>
-      ASSET_CATEGORIES.map((c) => ({
-        id: c.id,
-        label: c.label,
-        icon: CATEGORY_ICON_MAP[c.id] ?? Box,
-      })),
-    [],
-  );
+  const [editable, setEditable] = useState<EditableEventParse | null>(null);
 
   function addImages(uris: string[]) {
     setImageUris((prev) => {
@@ -136,7 +96,7 @@ export default function ScanInvoiceScreen() {
     if (status !== 'granted') {
       Alert.alert(
         'Permission refusée',
-        "L'accès à la caméra est nécessaire pour scanner une facture.",
+        "L'accès à la caméra est nécessaire pour scanner un devis.",
       );
       return;
     }
@@ -198,7 +158,6 @@ export default function ScanInvoiceScreen() {
     setStep('scanning');
     try {
       const result = await scanInvoice(imageUris);
-      setParsed(result);
       setEditable(parsedToEditable(result));
       setStep('preview');
     } catch (e) {
@@ -211,34 +170,33 @@ export default function ScanInvoiceScreen() {
       } else if (e instanceof ApiError && e.status === 0) {
         Alert.alert(
           'Connexion impossible',
-          "Vérifiez votre connexion internet et réessayez.",
+          'Vérifiez votre connexion internet et réessayez.',
         );
       } else {
         Alert.alert(
-          "Analyse impossible",
-          "Nous n'avons pas pu lire cette facture. Essayez avec une image plus nette.",
+          'Analyse impossible',
+          "Nous n'avons pas pu lire ce document. Essayez avec une image plus nette.",
         );
       }
     }
   }
 
   function handleConfirm() {
-    if (!parsed || !editable) return;
-    const finalParsed = editableToParsed(editable, parsed);
-    useScanPrefillStore
+    if (!editable) return;
+    useEventScanPrefillStore
       .getState()
-      .setPendingPrefill(finalParsed, imageUris[0]);
-    router.replace('/asset/add');
+      .setPendingPrefill(editableToPrefill(editable), imageUris[0]);
+    router.replace({ pathname: '/event/add', params: { assetId } });
   }
 
-  function updateField<K extends keyof EditableParse>(
+  function updateField<K extends keyof EditableEventParse>(
     key: K,
-    value: EditableParse[K],
+    value: EditableEventParse[K],
   ) {
     setEditable((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
-  // ─── RENDER : SCANNING (cinematic loading) ───────────────────────────
+  // ─── RENDER : SCANNING ────────────────────────────────────────────────
   if (step === 'scanning') {
     return (
       <View
@@ -261,11 +219,7 @@ export default function ScanInvoiceScreen() {
             marginBottom: SPACING.xl,
           }}
         >
-          <ScanLine
-            size={36}
-            color={COLORS.accentDark}
-            strokeWidth={1.5}
-          />
+          <ScanLine size={36} color={COLORS.accentDark} strokeWidth={1.5} />
         </View>
         <StyledText variant="eyebrow" color={COLORS.accentDark}>
           ANALYSE EN COURS
@@ -275,7 +229,7 @@ export default function ScanInvoiceScreen() {
           align="center"
           style={{ marginTop: SPACING.sm, maxWidth: 280 }}
         >
-          Nous lisons votre facture
+          Nous lisons votre document
         </StyledText>
         <StyledText
           variant="body"
@@ -283,14 +237,14 @@ export default function ScanInvoiceScreen() {
           align="center"
           style={{ marginTop: SPACING.sm, maxWidth: 300 }}
         >
-          Quelques secondes — nous extrayons le vendeur, la date,
-          le produit et le montant.
+          Quelques secondes — nous extrayons le prestataire,
+          la date, l'objet et le montant.
         </StyledText>
       </View>
     );
   }
 
-  // ─── RENDER : PREVIEW (champs éditables) ─────────────────────────────
+  // ─── RENDER : PREVIEW ────────────────────────────────────────────────
   if (step === 'preview' && editable) {
     return (
       <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -300,7 +254,6 @@ export default function ScanInvoiceScreen() {
             paddingBottom: 110,
           }}
         >
-          {/* HEADER */}
           <View style={{ paddingTop: SPACING.lg, paddingBottom: SPACING.md }}>
             <View
               style={{
@@ -312,7 +265,7 @@ export default function ScanInvoiceScreen() {
             >
               <Sparkles size={14} color={COLORS.accentDark} strokeWidth={2} />
               <StyledText variant="eyebrow" color={COLORS.accentDark}>
-                FACTURE ANALYSÉE
+                DOCUMENT ANALYSÉ
               </StyledText>
             </View>
             <StyledText variant="h2" style={{ marginTop: SPACING.xs }}>
@@ -323,11 +276,10 @@ export default function ScanInvoiceScreen() {
               color={COLORS.textSecondary}
               style={{ marginTop: SPACING.xs }}
             >
-              Corrigez si nécessaire avant de créer le bien.
+              Corrigez si nécessaire avant de créer l'événement.
             </StyledText>
           </View>
 
-          {/* PREVIEW PHOTO */}
           {imageUris[0] && (
             <View
               style={{
@@ -345,72 +297,42 @@ export default function ScanInvoiceScreen() {
             </View>
           )}
 
-          {/* IDENTITÉ */}
-          <FormSection title="IDENTITÉ DU PRODUIT">
+          <FormSection title="ÉVÉNEMENT">
             <TextField
-              label="PRODUIT"
-              value={editable.item_name}
-              onChangeText={(v) => updateField('item_name', v)}
-              placeholder="Nom du produit"
-            />
-            <TextField
-              label="MARQUE"
-              value={editable.brand}
-              onChangeText={(v) => updateField('brand', v)}
-              placeholder="Ex : Bosch"
-            />
-            <TextField
-              label="MODÈLE"
-              value={editable.model}
-              onChangeText={(v) => updateField('model', v)}
-              placeholder="Ex : WAU28T40FF"
-            />
-            <TextField
-              label="N° DE SÉRIE"
-              value={editable.serial_number}
-              onChangeText={(v) => updateField('serial_number', v)}
-              placeholder="Optionnel"
-            />
-          </FormSection>
-
-          {/* FACTURE */}
-          <FormSection title="DÉTAILS FACTURE">
-            <TextField
-              label="VENDEUR"
-              value={editable.vendor_name}
-              onChangeText={(v) => updateField('vendor_name', v)}
-              placeholder="Ex : Darty, Boulanger…"
+              label="TITRE"
+              value={editable.title}
+              onChangeText={(v) => updateField('title', v)}
+              placeholder="Ex : Vidange, Révision…"
             />
             <DateField
-              label="DATE D'ACHAT"
-              value={editable.purchase_date || undefined}
-              onChange={(v) => updateField('purchase_date', v ?? '')}
+              label="DATE"
+              value={editable.eventDate || undefined}
+              onChange={(v) => updateField('eventDate', v ?? '')}
             />
             <TextField
               label="MONTANT TTC (€)"
-              value={editable.total_ttc}
-              onChangeText={(v) => updateField('total_ttc', v)}
+              value={editable.cost}
+              onChangeText={(v) => updateField('cost', v)}
               placeholder="0,00"
               keyboardType="decimal-pad"
             />
-          </FormSection>
-
-          {/* CATÉGORIE */}
-          <FormSection title="CATÉGORIE">
-            <SelectGrid
-              options={categoryOptions}
-              selectedId={editable.category_suggestion}
-              onSelect={(id) =>
-                isValidCategoryId(id)
-                  ? updateField('category_suggestion', id)
-                  : null
-              }
-              columns={3}
+            <TextField
+              label="PRESTATAIRE"
+              value={editable.providerName}
+              onChangeText={(v) => updateField('providerName', v)}
+              placeholder="Nom du garage, technicien…"
+            />
+            <TextField
+              label="NOTES"
+              value={editable.notes}
+              onChangeText={(v) => updateField('notes', v)}
+              placeholder="Observations, pièces…"
+              multiline
+              numberOfLines={3}
             />
           </FormSection>
         </Screen>
 
-        {/* STICKY BOTTOM */}
         <View
           style={{
             position: 'absolute',
@@ -469,7 +391,6 @@ export default function ScanInvoiceScreen() {
           paddingBottom: step === 'ready' ? 110 : SPACING.xl,
         }}
       >
-        {/* HEADER */}
         <View style={{ paddingTop: SPACING.lg, paddingBottom: SPACING.xl }}>
           <View
             style={{
@@ -485,19 +406,18 @@ export default function ScanInvoiceScreen() {
             </StyledText>
           </View>
           <StyledText variant="h1" style={{ fontSize: 28, lineHeight: 34 }}>
-            Photographiez votre facture
+            Photographiez votre devis ou facture
           </StyledText>
           <StyledText
             variant="body"
             color={COLORS.textSecondary}
             style={{ marginTop: SPACING.sm }}
           >
-            Nous pré-remplissons automatiquement votre bien.
-            Jusqu'à {MAX_IMAGES} pages par facture.
+            Nous pré-remplissons l'événement et activons le rappel
+            si la date est future. Jusqu'à {MAX_IMAGES} pages.
           </StyledText>
         </View>
 
-        {/* THUMBNAILS */}
         {imageUris.length > 0 && (
           <View style={{ marginBottom: SPACING.xl }}>
             <View
@@ -519,7 +439,10 @@ export default function ScanInvoiceScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: SPACING.sm, paddingRight: SPACING.lg }}
+              contentContainerStyle={{
+                gap: SPACING.sm,
+                paddingRight: SPACING.lg,
+              }}
             >
               {imageUris.map((uri, idx) => (
                 <View
@@ -616,7 +539,6 @@ export default function ScanInvoiceScreen() {
           </View>
         )}
 
-        {/* SOURCES (état initial) */}
         {imageUris.length === 0 && (
           <View style={{ gap: SPACING.md }}>
             <Card
@@ -655,7 +577,7 @@ export default function ScanInvoiceScreen() {
                     color={COLORS.textSecondary}
                     style={{ marginTop: 2 }}
                   >
-                    Photographiez la facture directement.
+                    Photographiez le devis ou la facture.
                   </StyledText>
                 </View>
               </View>
@@ -706,7 +628,6 @@ export default function ScanInvoiceScreen() {
           </View>
         )}
 
-        {/* INFO BOX TIPS */}
         {imageUris.length === 0 && (
           <View
             style={{
@@ -723,14 +644,13 @@ export default function ScanInvoiceScreen() {
               POUR UN MEILLEUR RÉSULTAT
             </StyledText>
             <StyledText variant="small" color={COLORS.textSecondary}>
-              Cadrez la facture entière, sur fond uni, bien éclairée.
+              Cadrez le document entier, sur fond uni, bien éclairé.
               {'\n'}Évitez les reflets et les angles trop prononcés.
             </StyledText>
           </View>
         )}
       </Screen>
 
-      {/* STICKY ANALYZE */}
       {step === 'ready' && (
         <View
           style={{
@@ -764,7 +684,10 @@ export default function ScanInvoiceScreen() {
           >
             <Sparkles size={16} color={COLORS.textInverse} strokeWidth={2} />
             <StyledText variant="title" color={COLORS.textInverse}>
-              Analyser {imageUris.length === 1 ? 'la facture' : `${imageUris.length} pages`}
+              Analyser{' '}
+              {imageUris.length === 1
+                ? 'le document'
+                : `${imageUris.length} pages`}
             </StyledText>
           </Pressable>
         </View>

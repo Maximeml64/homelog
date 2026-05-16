@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, ScrollView, RefreshControl, Pressable } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import {
@@ -8,15 +8,16 @@ import {
   History as HistoryIcon,
 } from 'lucide-react-native';
 import {
-  Screen,
-  StyledText,
-  Separator,
-  SectionHeader,
+  AddTile,
+  AssetTile,
+  ErrorBanner,
   MiniKPI,
   QuickAction,
   ReminderCard,
-  AssetTile,
-  AddTile,
+  Screen,
+  SectionHeader,
+  Separator,
+  StyledText,
 } from '../../components/ui';
 import { COLORS, RADIUS, SPACING } from '../../constants/theme';
 import { useAppStore } from '../../src/stores/appStore';
@@ -38,11 +39,17 @@ export default function HomeScreen() {
   const userName = useAppStore((s) => s.userName);
   const assets = useAssetStore((s) => s.assets);
   const fetchAssets = useAssetStore((s) => s.fetchAssets);
+  const assetError = useAssetStore((s) => s.error);
+  const clearAssetError = useAssetStore((s) => s.clearError);
   const upcomingReminders = useEventStore((s) => s.upcomingReminders);
   const fetchUpcomingReminders = useEventStore((s) => s.fetchUpcomingReminders);
+  const eventError = useEventStore((s) => s.error);
+  const clearEventError = useEventStore((s) => s.clearError);
   const getTotalPatrimony = useEventStore((s) => s.getTotalPatrimony);
   const getYearlyCost = useEventStore((s) => s.getYearlyCost);
   const getUpcomingCost = useEventStore((s) => s.getUpcomingCost);
+
+  const errorMessage = assetError ?? eventError;
 
   const [refreshing, setRefreshing] = useState(false);
   const [patrimony, setPatrimony] = useState(0);
@@ -65,6 +72,29 @@ export default function HomeScreen() {
     setUpcomingCost(upc);
   }, [getTotalPatrimony, getYearlyCost, getUpcomingCost, currentYear]);
 
+  // Premier chargement au montage, avec retry défensif si le store reste vide
+  // après la première tentative (cas observé au cold-start sur certains devices).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      await Promise.all([fetchAssets(), fetchUpcomingReminders()]);
+      if (!active) return;
+      const { assets: a } = useAssetStore.getState();
+      const { upcomingReminders: r } = useEventStore.getState();
+      if (a.length === 0 && r.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        if (!active) return;
+        await Promise.all([fetchAssets(), fetchUpcomingReminders()]);
+      }
+      if (active) await loadAggregates();
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refresh à chaque retour sur l'onglet (après navigation).
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -106,6 +136,23 @@ export default function HomeScreen() {
         />
       }
     >
+      {errorMessage && (
+        <View style={{ paddingTop: SPACING.md }}>
+          <ErrorBanner
+            message={errorMessage}
+            onRetry={() => {
+              clearAssetError();
+              clearEventError();
+              onRefresh();
+            }}
+            onDismiss={() => {
+              clearAssetError();
+              clearEventError();
+            }}
+          />
+        </View>
+      )}
+
       {/* HEADER ÉDITORIAL */}
       <View style={{ paddingHorizontal: PAD, paddingTop: SPACING.lg, paddingBottom: SPACING.md }}>
         <StyledText variant="eyebrow">{dateLabel.toUpperCase()}</StyledText>

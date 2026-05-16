@@ -4,24 +4,28 @@ import React, { useCallback, useState } from 'react';
 import { View, Pressable, Alert, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
-  ChevronRight,
-  Trash2,
   Bell,
   BellOff,
+  CheckCircle2,
+  ChevronRight,
+  Trash2,
 } from 'lucide-react-native';
 import AttachmentsSection from '../../components/AttachmentsSection';
 import {
-  Screen,
-  StyledText,
   Card,
+  CategoryIcon,
   InfoRow,
+  Screen,
   SettingsGroup,
   SettingsItem,
-  CategoryIcon,
+  StyledText,
 } from '../../components/ui';
 import { COLORS, RADIUS, SPACING, SHADOWS, FONTS } from '../../constants/theme';
 import { getEventById } from '../../src/repositories/eventRepository';
-import { cancelReminder } from '../../src/services/notificationService';
+import {
+  cancelReminder,
+  scheduleReminder,
+} from '../../src/services/notificationService';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
 import {
@@ -63,7 +67,10 @@ export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const assets = useAssetStore((s) => s.assets);
   const removeEvent = useEventStore((s) => s.removeEvent);
+  const editEvent = useEventStore((s) => s.editEvent);
+  const addEvent = useEventStore((s) => s.addEvent);
   const fetchEventsByAsset = useEventStore((s) => s.fetchEventsByAsset);
+  const fetchUpcomingReminders = useEventStore((s) => s.fetchUpcomingReminders);
 
   const [event, setEvent] = useState<MaintenanceEvent | null>(null);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -97,6 +104,76 @@ export default function EventDetailScreen() {
     setRefreshing(false);
   }, [loadEvent]);
 
+  const handleMarkAsDone = () => {
+    if (!event) return;
+
+    const recurrenceLabel = event.recurrenceMonths
+      ? `Un nouvel événement sera créé dans ${event.recurrenceMonths} mois.`
+      : "L'événement passera dans l'historique.";
+
+    Alert.alert('Marquer comme fait ?', recurrenceLabel, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Confirmer',
+        onPress: async () => {
+          try {
+            if (event.reminderNotifId) {
+              await cancelReminder(event.reminderNotifId);
+            }
+
+            await editEvent(event.id, {
+              status: 'past',
+              reminderEnabled: false,
+              nextDueDate: undefined,
+            });
+
+            if (event.recurrenceMonths) {
+              const nextDate = new Date(event.eventDate);
+              nextDate.setMonth(
+                nextDate.getMonth() + event.recurrenceMonths,
+              );
+              const nextDateIso = nextDate.toISOString().slice(0, 10);
+
+              const newEvent = await addEvent({
+                assetId: event.assetId,
+                eventType: event.eventType,
+                title: event.title,
+                eventDate: nextDateIso,
+                providerName: event.providerName,
+                nextDueDate: nextDateIso,
+                nextDueMileage: event.nextDueMileage,
+                reminderEnabled: true,
+                recurrenceMonths: event.recurrenceMonths,
+                status: 'upcoming',
+              });
+
+              const reminderDate = new Date(nextDate);
+              reminderDate.setHours(9, 0, 0, 0);
+              const assetForNotif = assets.find(
+                (a) => a.id === event.assetId,
+              );
+              const notifId = await scheduleReminder(
+                newEvent.id,
+                assetForNotif?.name ?? 'Entretien',
+                event.title,
+                reminderDate,
+              );
+              if (notifId) {
+                await editEvent(newEvent.id, { reminderNotifId: notifId });
+              }
+            }
+
+            await fetchEventsByAsset(event.assetId);
+            await fetchUpcomingReminders();
+            router.back();
+          } catch (e: any) {
+            Alert.alert('Erreur', e?.message ?? 'Action impossible.');
+          }
+        },
+      },
+    ]);
+  };
+
   const handleDelete = () => {
     if (!event) return;
     Alert.alert(
@@ -108,9 +185,6 @@ export default function EventDetailScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            if (event.reminderNotifId) {
-              await cancelReminder(event.reminderNotifId);
-            }
             await removeEvent(event.id);
             if (event.assetId) {
               await fetchEventsByAsset(event.assetId);
@@ -466,22 +540,55 @@ export default function EventDetailScreen() {
           backgroundColor: COLORS.background,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
+          gap: SPACING.sm,
         }}
       >
+        {isUpcoming && (
+          <Pressable
+            onPress={handleMarkAsDone}
+            style={({ pressed }) => [
+              {
+                backgroundColor: COLORS.accentDark,
+                borderRadius: RADIUS.md,
+                paddingVertical: SPACING.md,
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'center',
+                gap: SPACING.sm,
+                ...SHADOWS.sm,
+              },
+              pressed && { opacity: 0.9 },
+            ]}
+          >
+            <CheckCircle2
+              size={18}
+              color={COLORS.textInverse}
+              strokeWidth={2}
+            />
+            <StyledText variant="title" color={COLORS.textInverse}>
+              Marquer comme fait
+            </StyledText>
+          </Pressable>
+        )}
         <Pressable
           onPress={() => router.push(`/event/edit/${event.id}`)}
           style={({ pressed }) => [
             {
-              backgroundColor: COLORS.primary,
+              backgroundColor: isUpcoming ? COLORS.surface : COLORS.primary,
               borderRadius: RADIUS.md,
               paddingVertical: SPACING.md,
               alignItems: 'center',
-              ...SHADOWS.sm,
+              borderWidth: isUpcoming ? 1 : 0,
+              borderColor: COLORS.borderStrong,
+              ...(!isUpcoming && SHADOWS.sm),
             },
             pressed && { opacity: 0.9 },
           ]}
         >
-          <StyledText variant="title" color={COLORS.textInverse}>
+          <StyledText
+            variant="title"
+            color={isUpcoming ? COLORS.text : COLORS.textInverse}
+          >
             Modifier l'événement
           </StyledText>
         </Pressable>

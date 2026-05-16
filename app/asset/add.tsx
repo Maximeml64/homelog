@@ -5,19 +5,24 @@ import { View, Alert, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { Box, Camera } from 'lucide-react-native';
 import {
+  DateField,
+  FormSection,
   Screen,
+  SelectGrid,
   StyledText,
   TextField,
-  SelectGrid,
-  FormSection,
 } from '../../components/ui';
 import { CATEGORY_ICON_MAP } from '../../components/ui/CategoryIcon';
 import { ExtraDataForm } from '../../components/ExtraDataForm';
 import { COLORS, RADIUS, SHADOWS, SPACING } from '../../constants/theme';
 import { ASSET_CATEGORIES } from '../../constants/categories';
+import { getSuggestionsForCategory } from '../../constants/maintenanceSuggestions';
+import { applyMaintenanceSuggestions } from '../../src/services/maintenanceSuggestionService';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useAppStore } from '../../src/stores/appStore';
+import { useEventStore } from '../../src/stores/eventStore';
 import { useScanPrefillStore } from '../../src/stores/scanPrefillStore';
+import { persistAttachment } from '../../src/utils/attachmentStorage';
 import type { AssetCategoryId, AssetExtraData, ParsedInvoice } from '../../src/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -39,11 +44,19 @@ function buildConsolidatedNotes(prefill: ParsedInvoice): string {
     parts.push(`Vendeur : ${prefill.vendor_name}${addr}`);
   }
   if (prefill.invoice_number) parts.push(`Facture n°${prefill.invoice_number}`);
-  if (prefill.warranty_years) {
-    parts.push(`Garantie : ${prefill.warranty_years} an${prefill.warranty_years > 1 ? 's' : ''}`);
-  }
   if (prefill.notes) parts.push(prefill.notes);
   return parts.join('\n');
+}
+
+function computeWarrantyEnd(
+  purchaseDate: string | null,
+  warrantyYears: number | null,
+): string | undefined {
+  if (!purchaseDate || !warrantyYears) return undefined;
+  const start = new Date(purchaseDate);
+  if (Number.isNaN(start.getTime())) return undefined;
+  start.setFullYear(start.getFullYear() + warrantyYears);
+  return start.toISOString().slice(0, 10);
 }
 
 function clean(obj: Record<string, unknown>): Record<string, unknown> {
@@ -98,6 +111,9 @@ function buildExtraData(
 
 export default function AddAssetScreen() {
   const { addAsset, assetCount } = useAssetStore();
+  const fetchUpcomingReminders = useEventStore(
+    (s) => s.fetchUpcomingReminders,
+  );
   const canAddAsset = useAppStore((s) => s.canAddAsset);
 
   const [prefill, setPrefill] = useState<ParsedInvoice | null>(null);
@@ -108,6 +124,8 @@ export default function AddAssetScreen() {
   const [notes, setNotes] = useState('');
   const [extraData, setExtraData] = useState<Record<string, any>>({});
   const [coverImageUri, setCoverImageUri] = useState<string | undefined>(undefined);
+  const [purchaseDate, setPurchaseDate] = useState<string | undefined>(undefined);
+  const [warrantyEndDate, setWarrantyEndDate] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -116,9 +134,16 @@ export default function AddAssetScreen() {
 
     const p = pending.data;
     setPrefill(p);
-    setCoverImageUri(pending.imageUri);
+    if (pending.imageUri) {
+      persistAttachment(pending.imageUri)
+        .then(setCoverImageUri)
+        .catch(() => setCoverImageUri(pending.imageUri));
+    }
     setName(p.item_name ?? '');
     if (p.total_ttc != null) setPurchasePrice(String(p.total_ttc));
+    if (p.purchase_date) setPurchaseDate(p.purchase_date);
+    const computed = computeWarrantyEnd(p.purchase_date, p.warranty_years);
+    if (computed) setWarrantyEndDate(computed);
     setNotes(buildConsolidatedNotes(p));
 
     const cat = p.category_suggestion;
@@ -165,13 +190,15 @@ export default function AddAssetScreen() {
     }
     setSaving(true);
     try {
-      await addAsset({
+      const created = await addAsset({
         name: name.trim(),
         categoryId,
         location: location.trim() || undefined,
         purchasePrice: purchasePrice.trim()
           ? parseFloat(purchasePrice.replace(',', '.'))
           : undefined,
+        purchaseDate: purchaseDate || undefined,
+        warrantyEndDate: warrantyEndDate || undefined,
         notes: notes.trim() || undefined,
         extraData:
           Object.keys(extraData).length > 0
@@ -180,7 +207,45 @@ export default function AddAssetScreen() {
         coverImageUri,
         archived: false,
       });
-      router.back();
+
+      const suggestions = getSuggestionsForCategory(categoryId);
+      if (suggestions.length === 0) {
+        router.back();
+        return;
+      }
+      const summary = suggestions
+        .map((s) => `• ${s.title} (tous les ${s.recurrenceMonths} mois)`)
+        .join('\n');
+      Alert.alert(
+        'Activer les rappels recommandés ?',
+        `${summary}\n\nUn événement sera créé pour chaque rappel avec récurrence automatique.`,
+        [
+          {
+            text: 'Ignorer',
+            style: 'cancel',
+            onPress: () => router.back(),
+          },
+          {
+            text: 'Activer',
+            onPress: async () => {
+              try {
+                await applyMaintenanceSuggestions({
+                  assetId: created.id,
+                  assetName: created.name,
+                  suggestions,
+                });
+                await fetchUpcomingReminders();
+              } catch (e) {
+                Alert.alert(
+                  'Erreur',
+                  'Certains rappels n’ont pas pu être créés.',
+                );
+              }
+              router.back();
+            },
+          },
+        ],
+      );
     } catch (e) {
       Alert.alert('Erreur', 'Impossible de sauvegarder');
     } finally {
@@ -282,6 +347,20 @@ export default function AddAssetScreen() {
             />
           </FormSection>
         )}
+
+        {/* GARANTIE */}
+        <FormSection title="GARANTIE">
+          <DateField
+            label="DATE D'ACHAT"
+            value={purchaseDate}
+            onChange={setPurchaseDate}
+          />
+          <DateField
+            label="FIN DE GARANTIE"
+            value={warrantyEndDate}
+            onChange={setWarrantyEndDate}
+          />
+        </FormSection>
 
         {/* NOTES */}
         <FormSection title="NOTES">

@@ -317,6 +317,7 @@ export interface Asset {
   notes?: string;
   coverImageUri?: string;
   extraData?: AssetExtraData;
+  warrantyEndDate?: string;
   archived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -347,6 +348,7 @@ export interface MaintenanceEvent {
   nextDueMileage?: number;
   reminderEnabled: boolean;
   reminderNotifId?: string;
+  recurrenceMonths?: number;
   status: 'past' | 'upcoming';
   attachments?: Attachment[];
   createdAt: string;

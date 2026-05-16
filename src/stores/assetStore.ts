@@ -6,11 +6,18 @@ import {
   deleteAsset,
   getAllAssets,
   getArchivedAssets,
+  getAssetById,
   getAssetCount,
   updateAsset,
 } from '../repositories/assetRepository';
-import { getEventsByAsset } from '../repositories/eventRepository';
-import { cancelReminder } from '../services/notificationService';
+import {
+  getEventsByAsset,
+  updateEvent,
+} from '../repositories/eventRepository';
+import {
+  cancelReminder,
+  scheduleReminder,
+} from '../services/notificationService';
 import { Asset } from '../types';
 
 interface AssetStore {
@@ -27,6 +34,7 @@ interface AssetStore {
   removeAsset: (id: string) => Promise<void>;
   archiveAsset: (id: string) => Promise<void>;
   unarchiveAsset: (id: string) => Promise<void>;
+  clearError: () => void;
 }
 
 export const useAssetStore = create<AssetStore>((set, get) => ({
@@ -42,7 +50,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       const assets = await getAllAssets();
       set({ assets, loading: false });
     } catch (e: any) {
-      set({ error: e.message, loading: false });
+      set({ error: e?.message ?? String(e), loading: false });
     }
   },
 
@@ -59,6 +67,8 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     const count = await getAssetCount();
     set({ assetCount: count });
   },
+
+  clearError: () => set({ error: null }),
 
   addAsset: async (data) => {
     const asset = await createAsset(data);
@@ -92,6 +102,28 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
 
   unarchiveAsset: async (id) => {
     await updateAsset(id, { archived: false });
+
+    const asset = await getAssetById(id);
+    const db_events = await getEventsByAsset(id);
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+
+    for (const event of db_events) {
+      if (!event.reminderEnabled || !event.nextDueDate) continue;
+      const dueDate = new Date(event.nextDueDate);
+      if (Number.isNaN(dueDate.getTime()) || dueDate <= todayMidnight) continue;
+
+      const reminderDate = new Date(dueDate);
+      reminderDate.setHours(9, 0, 0, 0);
+      const notifId = await scheduleReminder(
+        event.id,
+        asset?.name ?? 'Entretien',
+        event.title,
+        reminderDate,
+      );
+      await updateEvent(event.id, { reminderNotifId: notifId ?? undefined });
+    }
+
     await get().fetchAssets();
     await get().fetchAssetCount();
     await get().fetchArchivedAssets();
