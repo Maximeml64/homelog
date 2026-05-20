@@ -1,11 +1,11 @@
 // app/asset/[id].tsx
 
 import * as ImagePicker from 'expo-image-picker';
+import { Image } from 'expo-image';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
-  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -544,9 +544,12 @@ export default function AssetDetailScreen() {
                       ]}
                     >
                       <Image
-                        source={{ uri: photo.uri }}
+                        source={photo.uri}
                         style={{ width: '100%', height: '100%' }}
-                        resizeMode="cover"
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        transition={150}
+                        recyclingKey={photo.uri}
                       />
                       <View
                         style={{

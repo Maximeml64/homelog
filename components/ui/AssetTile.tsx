@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Pressable, Image, ViewStyle } from 'react-native';
+import { View, Pressable, ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
 import { Plus } from 'lucide-react-native';
 import { StyledText } from './StyledText';
 import { CategoryIcon } from './CategoryIcon';
@@ -54,9 +55,12 @@ export function AssetTile({
       >
         {imageUri ? (
           <Image
-            source={{ uri: imageUri }}
+            source={imageUri}
             style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            transition={150}
+            recyclingKey={imageUri}
           />
         ) : (
           <CategoryIcon categoryId={categoryId} size={32} color={COLORS.textSecondary} />

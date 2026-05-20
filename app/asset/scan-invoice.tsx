@@ -4,12 +4,12 @@ import React, { useMemo, useState } from 'react';
 import {
   ActionSheetIOS,
   Alert,
-  Image,
   Platform,
   Pressable,
   ScrollView,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -209,10 +209,7 @@ export default function ScanInvoiceScreen() {
           'Limite atteinte (20 scans/jour). Réessayez demain.',
         );
       } else if (e instanceof ApiError && e.status === 0) {
-        Alert.alert(
-          'Connexion impossible',
-          "Vérifiez votre connexion internet et réessayez.",
-        );
+        Alert.alert('Connexion impossible', e.message);
       } else {
         Alert.alert(
           "Analyse impossible",
@@ -338,9 +335,10 @@ export default function ScanInvoiceScreen() {
               }}
             >
               <Image
-                source={{ uri: imageUris[0] }}
+                source={imageUris[0]}
                 style={{ width: '100%', height: 180 }}
-                resizeMode="cover"
+                contentFit="cover"
+                cachePolicy="memory-disk"
               />
             </View>
           )}
@@ -531,13 +529,15 @@ export default function ScanInvoiceScreen() {
                   }}
                 >
                   <Image
-                    source={{ uri }}
+                    source={uri}
                     style={{
                       width: 96,
                       height: 128,
                       backgroundColor: COLORS.surfaceAlt,
                     }}
-                    resizeMode="cover"
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    recyclingKey={uri}
                   />
                   <View
                     style={{

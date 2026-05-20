@@ -19,6 +19,7 @@ import {
   IBMPlexSerif_600SemiBold,
   IBMPlexSerif_700Bold,
 } from '@expo-google-fonts/ibm-plex-serif';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { COLORS } from '../constants/theme';
 import { getDatabase } from '../src/db/client';
 import { requestNotificationPermission } from '../src/services/notificationService';
@@ -89,32 +90,34 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar style="dark" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: COLORS.background },
-          headerTintColor: COLORS.text,
-          headerTitleStyle: { fontWeight: '600' },
-          contentStyle: { backgroundColor: COLORS.background },
-          headerShadowVisible: false,
-          headerBackTitle: 'Retour',
-        }}
-      >
-        <Stack.Screen name="search" options={{ title: 'Recherche', presentation: 'modal' }} />
-        <Stack.Screen name="archived" options={{ title: 'Biens archivés' }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-        <Stack.Screen name="asset/add" options={{ title: 'Nouveau bien', presentation: 'modal' }} />
-        <Stack.Screen name="asset/scan-invoice" options={{ title: 'Scanner une facture', presentation: 'modal' }} />
-        <Stack.Screen name="asset/[id]" options={{ title: '' }} />
-        <Stack.Screen name="asset/edit/[id]" options={{ title: 'Modifier', presentation: 'modal' }} />
-        <Stack.Screen name="event/add" options={{ title: 'Nouvel événement', presentation: 'modal' }} />
-        <Stack.Screen name="event/scan-invoice" options={{ title: 'Scanner un devis', presentation: 'modal' }} />
-        <Stack.Screen name="event/[id]" options={{ title: 'Événement' }} />
-        <Stack.Screen name="event/edit/[id]" options={{ title: "Modifier l'événement", presentation: 'modal' }} />
-        <Stack.Screen name="paywall" options={{ title: 'Premium', presentation: 'modal' }} />
-      </Stack>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <StatusBar style="dark" />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: COLORS.background },
+            headerTintColor: COLORS.text,
+            headerTitleStyle: { fontWeight: '600' },
+            contentStyle: { backgroundColor: COLORS.background },
+            headerShadowVisible: false,
+            headerBackTitle: 'Retour',
+          }}
+        >
+          <Stack.Screen name="search" options={{ title: 'Recherche', presentation: 'modal' }} />
+          <Stack.Screen name="archived" options={{ title: 'Biens archivés' }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+          <Stack.Screen name="asset/add" options={{ title: 'Nouveau bien', presentation: 'modal' }} />
+          <Stack.Screen name="asset/scan-invoice" options={{ title: 'Scanner une facture', presentation: 'modal' }} />
+          <Stack.Screen name="asset/[id]" options={{ title: '' }} />
+          <Stack.Screen name="asset/edit/[id]" options={{ title: 'Modifier', presentation: 'modal' }} />
+          <Stack.Screen name="event/add" options={{ title: 'Nouvel événement', presentation: 'modal' }} />
+          <Stack.Screen name="event/scan-invoice" options={{ title: 'Scanner un devis', presentation: 'modal' }} />
+          <Stack.Screen name="event/[id]" options={{ title: 'Événement' }} />
+          <Stack.Screen name="event/edit/[id]" options={{ title: "Modifier l'événement", presentation: 'modal' }} />
+          <Stack.Screen name="paywall" options={{ title: 'Premium', presentation: 'modal' }} />
+        </Stack>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }

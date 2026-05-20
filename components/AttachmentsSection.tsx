@@ -6,15 +6,14 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import {
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import {
   FileText,
-  Image as ImageIcon,
   Paperclip,
   Plus,
 } from 'lucide-react-native';
@@ -218,8 +217,12 @@ export default function AttachmentsSection({
             >
               {attachment.type === 'photo' ? (
                 <Image
-                  source={{ uri: attachment.uri }}
+                  source={attachment.uri}
                   style={styles.thumbnail}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={150}
+                  recyclingKey={attachment.uri}
                 />
               ) : (
                 <View style={styles.iconContainer}>

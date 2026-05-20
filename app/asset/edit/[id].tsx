@@ -212,6 +212,11 @@ export default function EditAssetScreen() {
             onChangeText={setLocation}
             placeholder="Ex: Garage, Cuisine…"
           />
+          <DateField
+            label="DATE D'ACHAT"
+            value={purchaseDate}
+            onChange={setPurchaseDate}
+          />
           <TextField
             label="PRIX D'ACHAT (€)"
             value={purchasePrice}
@@ -234,11 +239,6 @@ export default function EditAssetScreen() {
 
         {/* GARANTIE */}
         <FormSection title="GARANTIE">
-          <DateField
-            label="DATE D'ACHAT"
-            value={purchaseDate}
-            onChange={setPurchaseDate}
-          />
           <DateField
             label="FIN DE GARANTIE"
             value={warrantyEndDate}

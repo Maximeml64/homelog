@@ -168,12 +168,18 @@ export async function getTotalCostByAsset(assetId: string): Promise<number> {
 
 export async function getAnnualCost(year: number): Promise<number> {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<{ total: number }>(
-    `SELECT COALESCE(SUM(cost), 0) as total FROM maintenance_event 
+  const yearStr = year.toString();
+  const eventsRow = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(cost), 0) as total FROM maintenance_event
      WHERE strftime('%Y', event_date) = ?`,
-    [year.toString()]
+    [yearStr]
   );
-  return row?.total ?? 0;
+  const assetsRow = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(purchase_price), 0) as total FROM asset
+     WHERE archived = 0 AND strftime('%Y', purchase_date) = ?`,
+    [yearStr]
+  );
+  return (eventsRow?.total ?? 0) + (assetsRow?.total ?? 0);
 }
 
 export async function getUpcomingCost(): Promise<number> {
@@ -213,20 +219,33 @@ export async function getMonthlyCosts(year: number): Promise<{ month: number; to
   return result;
 }
 
-// Dépenses par catégorie de bien sur une année
+// Dépenses par catégorie de bien sur une année — agrège les coûts d'événements
+// passés ET le prix d'achat des biens acquis dans l'année.
 export async function getCostByCategory(year: number): Promise<{ categoryId: string; total: number }[]> {
   const db = await getDatabase();
+  const yearStr = year.toString();
   const rows = await db.getAllAsync<{ category_id: string; total: number }>(
-    `SELECT a.category_id, COALESCE(SUM(me.cost), 0) as total
-     FROM maintenance_event me
-     INNER JOIN asset a ON me.asset_id = a.id
-     WHERE strftime('%Y', me.event_date) = ?
-     AND me.status = 'past'
-     AND me.cost IS NOT NULL
-     AND a.archived = 0
-     GROUP BY a.category_id
+    `SELECT category_id, SUM(total) as total FROM (
+       SELECT a.category_id, COALESCE(SUM(me.cost), 0) as total
+       FROM maintenance_event me
+       INNER JOIN asset a ON me.asset_id = a.id
+       WHERE strftime('%Y', me.event_date) = ?
+       AND me.status = 'past'
+       AND me.cost IS NOT NULL
+       AND a.archived = 0
+       GROUP BY a.category_id
+       UNION ALL
+       SELECT category_id, COALESCE(SUM(purchase_price), 0) as total
+       FROM asset
+       WHERE archived = 0
+       AND purchase_price IS NOT NULL
+       AND strftime('%Y', purchase_date) = ?
+       GROUP BY category_id
+     )
+     GROUP BY category_id
+     HAVING total > 0
      ORDER BY total DESC`,
-    [year.toString()]
+    [yearStr, yearStr]
   );
   return rows.map(r => ({ categoryId: r.category_id, total: r.total }));
 }
