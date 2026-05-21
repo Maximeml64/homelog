@@ -43,8 +43,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Homelog accède à vos photos pour illustrer vos biens et événements.",
-          "cameraPermission": "Homelog utilise la caméra pour photographier vos biens."
+          "photosPermission": "Homelog accède à vos photos pour illustrer vos biens et vos événements d'entretien.",
+          "cameraPermission": "Homelog utilise la caméra pour photographier vos biens et scanner vos factures.",
+          "microphonePermission": false
         }
       ],
       [

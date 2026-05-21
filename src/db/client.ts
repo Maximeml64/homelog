@@ -19,27 +19,32 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
 }
 
 async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
-  // Crée les tables si elles n'existent pas
   const statements = CREATE_TABLES
     .split(';')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 
   for (const statement of statements) {
     await db.execAsync(statement + ';');
   }
 
-  // Récupère la version actuelle
-  const versionRow = await db.getFirstAsync<{ value: string }>(
-    `SELECT value FROM app_settings WHERE key = 'schema_version'`
-  ).catch(() => null);
+  const versionRow = await db
+    .getFirstAsync<{ value: string }>(
+      `SELECT value FROM app_settings WHERE key = 'schema_version'`
+    )
+    .catch(() => null);
 
+  const isFreshInstall = versionRow === null;
   const currentVersion = versionRow ? parseInt(versionRow.value) : 0;
 
-  // Applique les migrations manquantes
-  for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
-    const migration = MIGRATIONS[v];
-    if (migration) {
+  // Sur fresh install, CREATE_TABLES vient de créer toutes les tables au
+  // schéma courant. Rejouer les migrations échouerait sur les ALTER TABLE
+  // qui ajoutent des colonnes déjà présentes — on enregistre directement
+  // SCHEMA_VERSION.
+  if (!isFreshInstall) {
+    for (let v = currentVersion + 1; v <= SCHEMA_VERSION; v++) {
+      const migration = MIGRATIONS[v];
+      if (!migration) continue;
       await db.execAsync('PRAGMA foreign_keys = OFF;');
       for (const sql of migration) {
         await db.execAsync(sql);
@@ -48,7 +53,6 @@ async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     }
   }
 
-  // Met à jour la version
   await db.runAsync(
     `INSERT OR REPLACE INTO app_settings (key, value) VALUES ('schema_version', ?)`,
     [SCHEMA_VERSION.toString()]

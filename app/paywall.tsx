@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   View,
@@ -27,6 +28,7 @@ import {
   SHADOWS,
   SPACING,
 } from '../constants/theme';
+import { PRIVACY_URL, TERMS_URL } from '../constants/config';
 import { useAppStore } from '../src/stores/appStore';
 
 interface Feature {
@@ -351,10 +353,54 @@ export default function PaywallScreen() {
             lineHeight: 16,
           }}
         >
-          Les abonnements se renouvellent automatiquement et peuvent être
-          annulés à tout moment depuis les réglages App Store. L'offre à
-          vie est un paiement unique sans renouvellement.
+          Le paiement sera prélevé sur votre compte Apple ID à la
+          confirmation de l'achat. L'abonnement se renouvelle automatiquement
+          au même tarif sauf annulation au moins 24 heures avant la fin de la
+          période en cours. Vous pouvez gérer ou annuler votre abonnement à
+          tout moment depuis les réglages de votre compte App Store. L'offre
+          à vie est un paiement unique sans renouvellement.
         </StyledText>
+
+        {/* LEGAL LINKS */}
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: SPACING.md,
+            marginTop: SPACING.md,
+          }}
+        >
+          <Pressable
+            onPress={() => Linking.openURL(TERMS_URL)}
+            hitSlop={8}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          >
+            <StyledText
+              variant="caption"
+              color={COLORS.textSecondary}
+              style={{ textDecorationLine: 'underline' }}
+            >
+              Conditions d'utilisation
+            </StyledText>
+          </Pressable>
+          <StyledText variant="caption" color={COLORS.textTertiary}>
+            ·
+          </StyledText>
+          <Pressable
+            onPress={() => Linking.openURL(PRIVACY_URL)}
+            hitSlop={8}
+            style={({ pressed }) => [pressed && { opacity: 0.6 }]}
+          >
+            <StyledText
+              variant="caption"
+              color={COLORS.textSecondary}
+              style={{ textDecorationLine: 'underline' }}
+            >
+              Politique de confidentialité
+            </StyledText>
+          </Pressable>
+        </View>
       </Screen>
 
       {/* STICKY CTA */}
