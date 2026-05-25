@@ -16,7 +16,6 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.homelog.app",
-      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
