@@ -7,6 +7,7 @@ import { Bell, BellOff, StickyNote } from 'lucide-react-native';
 import {
   Card,
   CategoryIcon,
+  Chip,
   DateField,
   FormSection,
   Screen,
@@ -18,7 +19,8 @@ import {
 } from '../../../components/ui';
 import { EVENT_TYPE_ICON_MAP } from '../../../components/ui/EventTypeIcon';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '../../../constants/theme';
-import { EVENT_TYPES } from '../../../constants/categories';
+import { EVENT_TYPES, RECURRENCE_OPTIONS } from '../../../constants/categories';
+import { uuidv4 } from '../../../src/db/client';
 import { getEventById } from '../../../src/repositories/eventRepository';
 import {
   cancelReminder,
@@ -68,9 +70,9 @@ export default function EditEventScreen() {
   const [providerName, setProviderName] = useState('');
   const [mileage, setMileage] = useState('');
   const [notes, setNotes] = useState('');
-  const [nextDueDate, setNextDueDate] = useState<string | undefined>(undefined);
   const [nextDueMileage, setNextDueMileage] = useState('');
   const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [recurrenceMonths, setRecurrenceMonths] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -92,11 +94,11 @@ export default function EditEventScreen() {
         event.mileageAtEvent !== undefined ? String(event.mileageAtEvent) : '',
       );
       setNotes(event.notes ?? '');
-      setNextDueDate(event.nextDueDate ?? undefined);
       setNextDueMileage(
         event.nextDueMileage !== undefined ? String(event.nextDueMileage) : '',
       );
       setReminderEnabled(event.reminderEnabled);
+      setRecurrenceMonths(event.recurrenceMonths ?? null);
       setLoading(false);
     });
   }, [id]);
@@ -110,12 +112,10 @@ export default function EditEventScreen() {
   today.setHours(0, 0, 0, 0);
 
   const parsedDate = eventDate ? new Date(eventDate) : null;
-  const parsedNextDueDate = nextDueDate ? new Date(nextDueDate) : null;
 
   const isPast = parsedDate ? parsedDate <= today : true;
   const isUpcoming = !isPast;
-  const canEnableReminder =
-    !!parsedNextDueDate && parsedNextDueDate > today;
+  const canEnableReminder = !!parsedDate && parsedDate > today;
 
   const eventTypeOptions: SelectGridOption[] = useMemo(
     () =>
@@ -146,22 +146,30 @@ export default function EditEventScreen() {
     try {
       let reminderNotifId: string | undefined = original.reminderNotifId;
 
-      if (original.reminderNotifId) {
-        await cancelReminder(original.reminderNotifId);
-        reminderNotifId = undefined;
-      }
+      const reminderShouldExist =
+        reminderEnabled && parsedDate !== null && parsedDate > today;
+      const reminderInputsChanged =
+        original.eventDate !== eventDate ||
+        original.title !== title.trim() ||
+        original.reminderEnabled !== reminderEnabled;
 
-      if (reminderEnabled && parsedNextDueDate && parsedNextDueDate > today) {
-        const reminderDate = new Date(parsedNextDueDate);
-        reminderDate.setHours(9, 0, 0, 0);
-        const tempId = `${original.assetId}-${Date.now()}`;
-        const notifId = await scheduleReminder(
-          tempId,
-          asset?.name ?? 'Entretien',
-          title.trim(),
-          reminderDate,
-        );
-        reminderNotifId = notifId ?? undefined;
+      if (reminderInputsChanged) {
+        if (original.reminderNotifId) {
+          await cancelReminder(original.reminderNotifId);
+          reminderNotifId = undefined;
+        }
+        if (reminderShouldExist && parsedDate) {
+          const reminderDate = new Date(parsedDate);
+          reminderDate.setHours(9, 0, 0, 0);
+          const tempId = uuidv4();
+          const notifId = await scheduleReminder(
+            tempId,
+            asset?.name ?? 'Entretien',
+            title.trim(),
+            reminderDate,
+          );
+          reminderNotifId = notifId ?? undefined;
+        }
       }
 
       await editEvent(original.id, {
@@ -172,12 +180,13 @@ export default function EditEventScreen() {
         providerName: providerName.trim() || undefined,
         notes: notes.trim() || undefined,
         mileageAtEvent: mileage.trim() ? parseInt(mileage, 10) : undefined,
-        nextDueDate: nextDueDate || undefined,
+        nextDueDate: isUpcoming ? eventDate : undefined,
         nextDueMileage: nextDueMileage.trim()
           ? parseInt(nextDueMileage, 10)
           : undefined,
         reminderEnabled: reminderEnabled && canEnableReminder,
         reminderNotifId,
+        recurrenceMonths: recurrenceMonths ?? undefined,
         status: isPast ? 'past' : 'upcoming',
       });
 
@@ -388,14 +397,8 @@ export default function EditEventScreen() {
           )}
         </FormSection>
 
-        {/* PROCHAIN ENTRETIEN */}
-        <FormSection title="PROCHAIN ENTRETIEN">
-          <DateField
-            label="DATE PROCHAINE ÉCHÉANCE"
-            value={nextDueDate}
-            onChange={setNextDueDate}
-            minDate={today}
-          />
+        {/* RAPPEL */}
+        <FormSection title="RAPPEL">
           {isVehicle && (
             <TextField
               label="KILOMÉTRAGE PROCHAINE ÉCHÉANCE"
@@ -414,13 +417,19 @@ export default function EditEventScreen() {
             <Toggle
               label="Rappel de notification"
               description={
-                canEnableReminder && nextDueDate
-                  ? `Notification le ${formatLongDate(nextDueDate)} à 9h`
-                  : 'Renseigne une date future pour activer'
+                canEnableReminder && eventDate
+                  ? `Notification le ${formatLongDate(eventDate)} à 9h`
+                  : "Renseigne une date d'événement future pour activer"
               }
               value={reminderEnabled && canEnableReminder}
               onValueChange={(val) => {
-                if (!canEnableReminder) return;
+                if (!canEnableReminder) {
+                  Alert.alert(
+                    'Rappel indisponible',
+                    "Choisis d'abord une date d'événement future pour activer le rappel.",
+                  );
+                  return;
+                }
                 setReminderEnabled(val);
               }}
               isLast
@@ -460,6 +469,35 @@ export default function EditEventScreen() {
               </StyledText>
             </View>
           )}
+
+          <View style={{ marginTop: SPACING.lg }}>
+            <StyledText
+              variant="eyebrow"
+              style={{ marginBottom: SPACING.sm }}
+            >
+              RÉCURRENCE
+            </StyledText>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.xs }}>
+              {RECURRENCE_OPTIONS.map((opt) => (
+                <Chip
+                  key={opt.label}
+                  label={opt.label}
+                  size="sm"
+                  selected={recurrenceMonths === opt.months}
+                  onPress={() => setRecurrenceMonths(opt.months)}
+                />
+              ))}
+            </View>
+            {recurrenceMonths !== null && (
+              <StyledText
+                variant="caption"
+                color={COLORS.textTertiary}
+                style={{ marginTop: SPACING.xs }}
+              >
+                Un nouvel événement sera proposé à la prochaine échéance.
+              </StyledText>
+            )}
+          </View>
         </FormSection>
 
         {/* NOTES */}

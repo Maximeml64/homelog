@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { router, useFocusEffect } from 'expo-router';
-import { Plus, Camera, Trash2 } from 'lucide-react-native';
+import { Camera, FileText, Plus, Trash2 } from 'lucide-react-native';
 import {
   Screen,
   StyledText,
@@ -22,6 +22,8 @@ import {
 } from '../../components/ui';
 import { COLORS, SPACING } from '../../constants/theme';
 import { ASSET_CATEGORIES } from '../../constants/categories';
+import { getEventsByAsset } from '../../src/repositories/eventRepository';
+import { exportAssetPDF } from '../../src/services/pdfService';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useAppStore } from '../../src/stores/appStore';
 import { getCategoryLabel } from '../../src/utils/format';
@@ -56,9 +58,16 @@ interface SwipeableAssetRowProps {
   isLast: boolean;
   onPress: () => void;
   onDelete: () => void;
+  onExport: () => void;
 }
 
-function SwipeableAssetRow({ asset, isLast, onPress, onDelete }: SwipeableAssetRowProps) {
+function SwipeableAssetRow({
+  asset,
+  isLast,
+  onPress,
+  onDelete,
+  onExport,
+}: SwipeableAssetRowProps) {
   const swipeRef = useRef<Swipeable>(null);
 
   const confirmDelete = useCallback(() => {
@@ -82,6 +91,11 @@ function SwipeableAssetRow({ asset, isLast, onPress, onDelete }: SwipeableAssetR
       ],
     );
   }, [asset.name, onDelete]);
+
+  const triggerExport = useCallback(() => {
+    swipeRef.current?.close();
+    onExport();
+  }, [onExport]);
 
   const renderRightActions = useCallback(() => (
     <TouchableOpacity
@@ -108,13 +122,41 @@ function SwipeableAssetRow({ asset, isLast, onPress, onDelete }: SwipeableAssetR
     </TouchableOpacity>
   ), [confirmDelete]);
 
+  const renderLeftActions = useCallback(() => (
+    <TouchableOpacity
+      onPress={triggerExport}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityLabel="Exporter le bien en PDF"
+      style={{
+        width: 84,
+        backgroundColor: COLORS.accentDark,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+      }}
+    >
+      <FileText color="#fff" size={22} strokeWidth={2} />
+      <StyledText
+        variant="caption"
+        color="#fff"
+        style={{ fontWeight: '700', letterSpacing: 0.3 }}
+      >
+        Exporter
+      </StyledText>
+    </TouchableOpacity>
+  ), [triggerExport]);
+
   return (
     <Swipeable
       ref={swipeRef}
       renderRightActions={renderRightActions}
+      renderLeftActions={renderLeftActions}
       rightThreshold={40}
+      leftThreshold={40}
       friction={2}
       overshootRight={false}
+      overshootLeft={false}
     >
       <View style={{ backgroundColor: COLORS.surface }}>
         <AssetListItem
@@ -229,6 +271,15 @@ export default function AssetsScreen() {
     },
     [removeAsset, fetchAssetCount],
   );
+
+  const handleExport = useCallback(async (asset: Asset) => {
+    try {
+      const events = await getEventsByAsset(asset.id);
+      await exportAssetPDF(asset, events);
+    } catch {
+      Alert.alert('Erreur', "L'export PDF a échoué.");
+    }
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
@@ -359,6 +410,7 @@ export default function AssetsScreen() {
                 isLast={idx === visibleAssets.length - 1}
                 onPress={() => router.push(`/asset/${asset.id}`)}
                 onDelete={() => handleDelete(asset.id)}
+                onExport={() => handleExport(asset)}
               />
             ))}
           </Card>

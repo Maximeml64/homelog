@@ -15,6 +15,7 @@ export const CREATE_TABLES = `
     notes TEXT,
     cover_image_uri TEXT,
     extra_data TEXT,
+    warranty_end_date TEXT,
     archived INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -45,6 +46,7 @@ export const CREATE_TABLES = `
     next_due_mileage INTEGER,
     reminder_enabled INTEGER DEFAULT 0,
     reminder_notif_id TEXT,
+    recurrence_months INTEGER,
     status TEXT DEFAULT 'past',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -70,7 +72,7 @@ export const CREATE_TABLES = `
   );
 `;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 5;
 
 export const MIGRATIONS: Record<number, string[]> = {
   2: [
@@ -93,5 +95,24 @@ export const MIGRATIONS: Record<number, string[]> = {
   ],
   3: [
     `ALTER TABLE asset ADD COLUMN extra_data TEXT`,
+  ],
+  4: [
+    `ALTER TABLE asset ADD COLUMN warranty_end_date TEXT`,
+    `ALTER TABLE maintenance_event ADD COLUMN recurrence_months INTEGER`,
+  ],
+  // Indexes pour éviter les full scans dès que le volume monte
+  // (asset_id sur events est utilisé partout, event_date pour les filtres
+  // d'année et le tri historique, reminder_enabled+next_due_date pour
+  // l'onglet Rappels, archived pour la liste des biens, attachment.event_id
+  // et attachment.asset_id pour le lookup des pièces jointes).
+  5: [
+    `CREATE INDEX IF NOT EXISTS idx_event_asset ON maintenance_event(asset_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_event_date ON maintenance_event(event_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_event_reminder ON maintenance_event(reminder_enabled, next_due_date)`,
+    `CREATE INDEX IF NOT EXISTS idx_event_status ON maintenance_event(status)`,
+    `CREATE INDEX IF NOT EXISTS idx_attachment_asset ON attachment(asset_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_attachment_event ON attachment(event_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_asset_archived ON asset(archived)`,
+    `CREATE INDEX IF NOT EXISTS idx_asset_purchase_date ON asset(purchase_date)`,
   ],
 };

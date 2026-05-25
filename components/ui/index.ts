@@ -28,3 +28,4 @@ export type { SelectGridOption } from './SelectGrid';
 export { Toggle } from './Toggle';
 export { DateField } from './DateField';
 export { FormSection } from './FormSection';
+export { ErrorBanner } from './ErrorBanner';

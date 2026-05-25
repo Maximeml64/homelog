@@ -32,3 +32,16 @@ export const EVENT_TYPES = [
   { id: 'warranty', label: 'Garantie / SAV', icon: '📋' },
   { id: 'note', label: 'Note libre', icon: '📝' },
 ];
+
+export interface RecurrenceOption {
+  months: number | null;
+  label: string;
+}
+
+export const RECURRENCE_OPTIONS: RecurrenceOption[] = [
+  { months: null, label: 'Aucune' },
+  { months: 3, label: '3 mois' },
+  { months: 6, label: '6 mois' },
+  { months: 12, label: '1 an' },
+  { months: 24, label: '2 ans' },
+];

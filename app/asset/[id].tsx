@@ -1,25 +1,32 @@
 // app/asset/[id].tsx
 
 import * as ImagePicker from 'expo-image-picker';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Image } from 'expo-image';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Image,
-  Pressable,
-  Alert,
-  RefreshControl,
   ActionSheetIOS,
+  Alert,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  useWindowDimensions,
+  View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
+  Archive,
+  Bell,
   Camera,
   ChevronRight,
-  Plus,
   FileText,
-  Archive,
+  Plus,
+  ShieldCheck,
+  ShieldOff,
+  Sparkles,
   Trash2,
-  Bell,
 } from 'lucide-react-native';
 import AttachmentsSection from '../../components/AttachmentsSection';
 import { ExtraDataDisplay } from '../../components/ExtraDataDisplay';
@@ -38,8 +45,11 @@ import {
 import { COLORS, RADIUS, SPACING, SHADOWS, FONTS } from '../../constants/theme';
 import { getAttachmentsByAsset } from '../../src/repositories/eventRepository';
 import { exportAssetPDF } from '../../src/services/pdfService';
+import { applyMaintenanceSuggestions } from '../../src/services/maintenanceSuggestionService';
 import { useAssetStore } from '../../src/stores/assetStore';
 import { useEventStore } from '../../src/stores/eventStore';
+import { persistAttachment } from '../../src/utils/attachmentStorage';
+import { getSuggestionsForCategory } from '../../constants/maintenanceSuggestions';
 import {
   formatEUR,
   formatLongDate,
@@ -55,6 +65,40 @@ const EVENT_SORT_LABELS: Record<EventSort, string> = {
   cost_desc: 'Coût',
 };
 
+function getWarrantyStatus(
+  warrantyEndDate: string,
+  now: Date,
+): { label: string; remaining: string; expired: boolean; soon: boolean } {
+  const end = new Date(warrantyEndDate);
+  end.setHours(0, 0, 0, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((end.getTime() - today.getTime()) / 86400000);
+  if (diffDays < 0) {
+    return {
+      label: 'Garantie expirée',
+      remaining: `le ${formatLongDate(warrantyEndDate)}`,
+      expired: true,
+      soon: false,
+    };
+  }
+  const months = Math.floor(diffDays / 30);
+  let remaining: string;
+  if (diffDays === 0) remaining = "Expire aujourd'hui";
+  else if (diffDays === 1) remaining = 'Expire demain';
+  else if (months >= 12)
+    remaining = `${Math.floor(months / 12)} an${months >= 24 ? 's' : ''} restant${months >= 24 ? 's' : ''}`;
+  else if (months >= 1)
+    remaining = `${months} mois restant${months > 1 ? 's' : ''}`;
+  else remaining = `${diffDays} jours restants`;
+  return {
+    label: 'Sous garantie',
+    remaining,
+    expired: false,
+    soon: diffDays <= 60,
+  };
+}
+
 export default function AssetDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const assets = useAssetStore((s) => s.assets);
@@ -63,18 +107,99 @@ export default function AssetDetailScreen() {
   const editAsset = useAssetStore((s) => s.editAsset);
   const events = useEventStore((s) => s.events);
   const fetchEventsByAsset = useEventStore((s) => s.fetchEventsByAsset);
+  const fetchUpcomingReminders = useEventStore(
+    (s) => s.fetchUpcomingReminders,
+  );
   const getTotalCost = useEventStore((s) => s.getTotalCost);
 
   const [totalCost, setTotalCost] = useState(0);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [eventSort, setEventSort] = useState<EventSort>('date_desc');
   const [refreshing, setRefreshing] = useState(false);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const heroScrollRef = useRef<ScrollView>(null);
+  const { width: windowWidth } = useWindowDimensions();
 
   const asset = useMemo(() => assets.find((a) => a.id === id), [assets, id]);
   const assetEvents = useMemo(
     () => events.filter((e) => e.assetId === id),
     [events, id],
   );
+
+  const heroPhotos = useMemo(() => {
+    const result: { uri: string; isCover: boolean; attachmentId?: string }[] =
+      [];
+    const cover = asset?.coverImageUri;
+    if (cover) result.push({ uri: cover, isCover: true });
+    attachments
+      .filter((a) => a.type === 'photo' && a.uri !== cover)
+      .forEach((a) =>
+        result.push({ uri: a.uri, isCover: false, attachmentId: a.id }),
+      );
+    return result;
+  }, [asset?.coverImageUri, attachments]);
+
+  const handleSetAsCover = useCallback(
+    async (uri: string) => {
+      if (!id) return;
+      await editAsset(id, { coverImageUri: uri });
+      heroScrollRef.current?.scrollTo({ x: 0, animated: true });
+    },
+    [id, editAsset],
+  );
+
+  const onHeroScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const slide = Math.round(e.nativeEvent.contentOffset.x / windowWidth);
+      if (slide !== heroIndex) setHeroIndex(slide);
+    },
+    [heroIndex, windowWidth],
+  );
+
+  const missingSuggestions = useMemo(() => {
+    if (!asset) return [];
+    const all = getSuggestionsForCategory(asset.categoryId);
+    if (all.length === 0) return [];
+    const upcomingTitles = new Set(
+      assetEvents
+        .filter((e) => e.status === 'upcoming')
+        .map((e) => e.title.toLowerCase()),
+    );
+    return all.filter((s) => !upcomingTitles.has(s.title.toLowerCase()));
+  }, [asset, assetEvents]);
+
+  const handleActivateSuggestions = useCallback(() => {
+    if (!asset || missingSuggestions.length === 0) return;
+    const summary = missingSuggestions
+      .map((s) => `• ${s.title} (tous les ${s.recurrenceMonths} mois)`)
+      .join('\n');
+    Alert.alert(
+      'Activer les rappels recommandés ?',
+      `${summary}\n\nUn événement sera créé pour chaque rappel avec récurrence automatique.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Activer',
+          onPress: async () => {
+            try {
+              await applyMaintenanceSuggestions({
+                assetId: asset.id,
+                assetName: asset.name,
+                suggestions: missingSuggestions,
+              });
+              await fetchEventsByAsset(asset.id);
+              await fetchUpcomingReminders();
+            } catch {
+              Alert.alert(
+                'Erreur',
+                'Certains rappels n’ont pas pu être créés.',
+              );
+            }
+          },
+        },
+      ],
+    );
+  }, [asset, missingSuggestions, fetchEventsByAsset, fetchUpcomingReminders]);
 
   const loadAttachments = useCallback(async () => {
     if (!id) return;
@@ -168,13 +293,14 @@ export default function AssetDetailScreen() {
               return;
             }
             const result = await ImagePicker.launchCameraAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              mediaTypes: 'images',
               allowsEditing: true,
               aspect: [1, 1],
               quality: 0.8,
             });
             if (!result.canceled) {
-              await editAsset(id, { coverImageUri: result.assets[0].uri });
+              const persisted = await persistAttachment(result.assets[0].uri);
+              await editAsset(id, { coverImageUri: persisted });
             }
           },
         },
@@ -187,13 +313,14 @@ export default function AssetDetailScreen() {
               return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              mediaTypes: 'images',
               allowsEditing: true,
               aspect: [1, 1],
               quality: 0.8,
             });
             if (!result.canceled) {
-              await editAsset(id, { coverImageUri: result.assets[0].uri });
+              const persisted = await persistAttachment(result.assets[0].uri);
+              await editAsset(id, { coverImageUri: persisted });
             }
           },
         },
@@ -318,62 +445,196 @@ export default function AssetDetailScreen() {
           />
         }
       >
-        {/* HERO PHOTO */}
-        <Pressable
-          onPress={handleChangePhoto}
-          style={({ pressed }) => [
-            {
-              marginHorizontal: SPACING.lg,
-              marginTop: SPACING.md,
-              height: 220,
-              borderRadius: RADIUS.lg,
-              overflow: 'hidden',
-              backgroundColor: COLORS.surfaceAlt,
-            },
-            pressed && { opacity: 0.92 },
-          ]}
+        {/* HERO GALLERY */}
+        <View
+          style={{
+            marginTop: SPACING.md,
+            marginBottom: SPACING.xs,
+          }}
         >
-          {asset.coverImageUri ? (
-            <Image
-              source={{ uri: asset.coverImageUri }}
-              style={{ width: '100%', height: '100%' }}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          {heroPhotos.length === 0 ? (
+            <Pressable
+              onPress={handleChangePhoto}
+              style={({ pressed }) => [
+                {
+                  marginHorizontal: SPACING.lg,
+                  height: 220,
+                  borderRadius: RADIUS.lg,
+                  overflow: 'hidden',
+                  backgroundColor: COLORS.surfaceAlt,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+                pressed && { opacity: 0.92 },
+              ]}
+            >
               <CategoryIcon
                 categoryId={asset.categoryId}
                 size={64}
                 color={COLORS.textTertiary}
                 strokeWidth={1}
               />
-            </View>
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: 12,
+                  right: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 4,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: 'rgba(17, 24, 39, 0.85)',
+                }}
+              >
+                <Camera size={12} color={COLORS.textInverse} strokeWidth={2} />
+                <StyledText
+                  variant="caption"
+                  color={COLORS.textInverse}
+                  style={{ fontFamily: FONTS.sansSemiBold }}
+                >
+                  Ajouter une photo
+                </StyledText>
+              </View>
+            </Pressable>
+          ) : (
+            <>
+              <ScrollView
+                ref={heroScrollRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={onHeroScroll}
+                style={{ marginHorizontal: SPACING.lg }}
+              >
+                {heroPhotos.map((photo, idx) => {
+                  const slideWidth = windowWidth - SPACING.lg * 2;
+                  const isCurrent = idx === heroIndex;
+                  const isCover = photo.isCover;
+                  return (
+                    <Pressable
+                      key={photo.uri}
+                      onPress={() => {
+                        if (isCover) {
+                          handleChangePhoto();
+                        } else {
+                          Alert.alert(
+                            'Photo',
+                            undefined,
+                            [
+                              {
+                                text: 'Définir comme couverture',
+                                onPress: () => handleSetAsCover(photo.uri),
+                              },
+                              { text: 'Annuler', style: 'cancel' },
+                            ],
+                          );
+                        }
+                      }}
+                      style={({ pressed }) => [
+                        {
+                          width: slideWidth,
+                          height: 220,
+                          borderRadius: RADIUS.lg,
+                          overflow: 'hidden',
+                          backgroundColor: COLORS.surfaceAlt,
+                        },
+                        pressed && { opacity: 0.92 },
+                      ]}
+                    >
+                      <Image
+                        source={photo.uri}
+                        style={{ width: '100%', height: '100%' }}
+                        contentFit="cover"
+                        cachePolicy="memory-disk"
+                        transition={150}
+                        recyclingKey={photo.uri}
+                      />
+                      <View
+                        style={{
+                          position: 'absolute',
+                          bottom: 12,
+                          right: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: RADIUS.full,
+                          backgroundColor: 'rgba(17, 24, 39, 0.85)',
+                        }}
+                      >
+                        <Camera
+                          size={12}
+                          color={COLORS.textInverse}
+                          strokeWidth={2}
+                        />
+                        <StyledText
+                          variant="caption"
+                          color={COLORS.textInverse}
+                          style={{ fontFamily: FONTS.sansSemiBold }}
+                        >
+                          {isCover ? 'Modifier' : 'Définir comme couverture'}
+                        </StyledText>
+                      </View>
+                      {isCover && heroPhotos.length > 1 && isCurrent && (
+                        <View
+                          style={{
+                            position: 'absolute',
+                            top: 12,
+                            left: 12,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: RADIUS.full,
+                            backgroundColor: 'rgba(17, 24, 39, 0.85)',
+                          }}
+                        >
+                          <StyledText
+                            variant="caption"
+                            color={COLORS.textInverse}
+                            style={{
+                              fontSize: 10,
+                              fontFamily: FONTS.sansSemiBold,
+                              letterSpacing: 0.5,
+                            }}
+                          >
+                            COUVERTURE
+                          </StyledText>
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              {heroPhotos.length > 1 && (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    gap: 6,
+                    marginTop: SPACING.sm,
+                  }}
+                >
+                  {heroPhotos.map((_, idx) => (
+                    <View
+                      key={idx}
+                      style={{
+                        width: idx === heroIndex ? 16 : 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor:
+                          idx === heroIndex
+                            ? COLORS.accent
+                            : COLORS.borderStrong,
+                      }}
+                    />
+                  ))}
+                </View>
+              )}
+            </>
           )}
-          {/* Camera pill bottom-right */}
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 12,
-              right: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 4,
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              borderRadius: RADIUS.full,
-              backgroundColor: 'rgba(17, 24, 39, 0.85)',
-            }}
-          >
-            <Camera size={12} color={COLORS.textInverse} strokeWidth={2} />
-            <StyledText
-              variant="caption"
-              color={COLORS.textInverse}
-              style={{ fontFamily: FONTS.sansSemiBold }}
-            >
-              Modifier
-            </StyledText>
-          </View>
-        </Pressable>
+        </View>
 
         {/* HEADER INFO */}
         <View
@@ -417,6 +678,131 @@ export default function AssetDetailScreen() {
             />
           )}
         </View>
+
+        {/* WARRANTY BADGE */}
+        {asset.warrantyEndDate && (() => {
+          const status = getWarrantyStatus(asset.warrantyEndDate, new Date());
+          const accent = status.expired
+            ? COLORS.textSecondary
+            : status.soon
+            ? COLORS.warning
+            : COLORS.success;
+          const bg = status.expired
+            ? COLORS.surfaceAlt
+            : status.soon
+            ? COLORS.warningMuted
+            : COLORS.successMuted;
+          const Icon = status.expired ? ShieldOff : ShieldCheck;
+          return (
+            <View
+              style={{
+                marginHorizontal: SPACING.lg,
+                marginBottom: SPACING.xl,
+                padding: SPACING.base,
+                borderRadius: RADIUS.md,
+                backgroundColor: bg,
+                borderLeftWidth: 3,
+                borderLeftColor: accent,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: SPACING.md,
+              }}
+            >
+              <View
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: RADIUS.sm,
+                  backgroundColor: COLORS.surface,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon size={16} color={accent} strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <StyledText
+                  variant="eyebrow"
+                  color={accent}
+                  style={{ fontFamily: FONTS.sansSemiBold }}
+                >
+                  {status.label.toUpperCase()}
+                </StyledText>
+                <StyledText
+                  variant="bodyMedium"
+                  numberOfLines={1}
+                  style={{ marginTop: 2 }}
+                >
+                  {status.remaining}
+                </StyledText>
+                {!status.expired && (
+                  <StyledText variant="small">
+                    Jusqu'au {formatLongDate(asset.warrantyEndDate)}
+                  </StyledText>
+                )}
+              </View>
+            </View>
+          );
+        })()}
+
+        {/* MAINTENANCE SUGGESTIONS */}
+        {missingSuggestions.length > 0 && (
+          <Pressable
+            onPress={handleActivateSuggestions}
+            style={({ pressed }) => [
+              {
+                marginHorizontal: SPACING.lg,
+                marginBottom: SPACING.xl,
+                padding: SPACING.base,
+                borderRadius: RADIUS.md,
+                backgroundColor: COLORS.surface,
+                borderWidth: 1,
+                borderColor: COLORS.borderStrong,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: SPACING.md,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: RADIUS.sm,
+                backgroundColor: COLORS.accentMuted,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Sparkles size={16} color={COLORS.accentDark} strokeWidth={2} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <StyledText
+                variant="eyebrow"
+                color={COLORS.accentDark}
+                style={{ fontFamily: FONTS.sansSemiBold }}
+              >
+                RAPPELS RECOMMANDÉS
+              </StyledText>
+              <StyledText
+                variant="bodyMedium"
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
+                {missingSuggestions.map((s) => s.title).join(' · ')}
+              </StyledText>
+              <StyledText variant="small" color={COLORS.textSecondary}>
+                Activer en un tap
+              </StyledText>
+            </View>
+            <ChevronRight
+              size={16}
+              color={COLORS.textTertiary}
+              strokeWidth={2}
+            />
+          </Pressable>
+        )}
 
         {/* NEXT EVENT CARD */}
         {nextEvent && nextEvent.nextDueDate && (

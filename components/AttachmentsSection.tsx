@@ -6,15 +6,14 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import {
   Alert,
-  Image,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import {
   FileText,
-  Image as ImageIcon,
   Paperclip,
   Plus,
 } from 'lucide-react-native';
@@ -23,6 +22,10 @@ import {
   createAttachment,
   deleteAttachment,
 } from '../src/repositories/eventRepository';
+import {
+  persistAttachment,
+  removePersistedAttachment,
+} from '../src/utils/attachmentStorage';
 import { logger } from '../src/utils/logger';
 import { Attachment } from '../src/types';
 
@@ -129,11 +132,12 @@ export default function AttachmentsSection({
   }) {
     setLoading(true);
     try {
+      const persistedUri = await persistAttachment(data.uri, data.fileName);
       await createAttachment({
         eventId,
         assetId,
         type: data.type,
-        uri: data.uri,
+        uri: persistedUri,
         mimeType: data.mimeType,
         fileName: data.fileName,
       });
@@ -169,6 +173,7 @@ export default function AttachmentsSection({
           style: 'destructive',
           onPress: async () => {
             await deleteAttachment(attachment.id);
+            await removePersistedAttachment(attachment.uri);
             onChanged();
           },
         },
@@ -212,8 +217,12 @@ export default function AttachmentsSection({
             >
               {attachment.type === 'photo' ? (
                 <Image
-                  source={{ uri: attachment.uri }}
+                  source={attachment.uri}
                   style={styles.thumbnail}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={150}
+                  recyclingKey={attachment.uri}
                 />
               ) : (
                 <View style={styles.iconContainer}>

@@ -18,6 +18,7 @@ function rowToEvent(row: any): MaintenanceEvent {
     nextDueMileage: row.next_due_mileage ?? undefined,
     reminderEnabled: row.reminder_enabled === 1,
     reminderNotifId: row.reminder_notif_id ?? undefined,
+    recurrenceMonths: row.recurrence_months ?? undefined,
     status: row.status as 'past' | 'upcoming',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -92,8 +93,8 @@ export async function createEvent(
     `INSERT INTO maintenance_event (
       id, asset_id, event_type, title, event_date, cost, provider_name,
       notes, mileage_at_event, next_due_date, next_due_mileage,
-      reminder_enabled, reminder_notif_id, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      reminder_enabled, reminder_notif_id, recurrence_months, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       data.assetId,
@@ -108,6 +109,7 @@ export async function createEvent(
       data.nextDueMileage ?? null,
       data.reminderEnabled ? 1 : 0,
       data.reminderNotifId ?? null,
+      data.recurrenceMonths ?? null,
       data.status,
       now,
       now,
@@ -124,39 +126,30 @@ export async function updateEvent(
   const db = await getDatabase();
   const now = new Date().toISOString();
 
-  await db.runAsync(
-    `UPDATE maintenance_event SET
-      event_type = COALESCE(?, event_type),
-      title = COALESCE(?, title),
-      event_date = COALESCE(?, event_date),
-      cost = ?,
-      provider_name = ?,
-      notes = ?,
-      mileage_at_event = ?,
-      next_due_date = ?,
-      next_due_mileage = ?,
-      reminder_enabled = COALESCE(?, reminder_enabled),
-      reminder_notif_id = ?,
-      status = COALESCE(?, status),
-      updated_at = ?
-    WHERE id = ?`,
-    [
-      data.eventType ?? null,
-      data.title ?? null,
-      data.eventDate ?? null,
-      data.cost ?? null,
-      data.providerName ?? null,
-      data.notes ?? null,
-      data.mileageAtEvent ?? null,
-      data.nextDueDate ?? null,
-      data.nextDueMileage ?? null,
-      data.reminderEnabled !== undefined ? (data.reminderEnabled ? 1 : 0) : null,
-      data.reminderNotifId ?? null,
-      data.status ?? null,
-      now,
-      id,
-    ]
-  );
+  const sets: string[] = [];
+  const values: any[] = [];
+
+  if (data.eventType !== undefined) { sets.push('event_type = ?'); values.push(data.eventType); }
+  if (data.title !== undefined) { sets.push('title = ?'); values.push(data.title); }
+  if (data.eventDate !== undefined) { sets.push('event_date = ?'); values.push(data.eventDate); }
+  if (data.cost !== undefined) { sets.push('cost = ?'); values.push(data.cost ?? null); }
+  if (data.providerName !== undefined) { sets.push('provider_name = ?'); values.push(data.providerName ?? null); }
+  if (data.notes !== undefined) { sets.push('notes = ?'); values.push(data.notes ?? null); }
+  if (data.mileageAtEvent !== undefined) { sets.push('mileage_at_event = ?'); values.push(data.mileageAtEvent ?? null); }
+  if (data.nextDueDate !== undefined) { sets.push('next_due_date = ?'); values.push(data.nextDueDate ?? null); }
+  if (data.nextDueMileage !== undefined) { sets.push('next_due_mileage = ?'); values.push(data.nextDueMileage ?? null); }
+  if (data.reminderEnabled !== undefined) { sets.push('reminder_enabled = ?'); values.push(data.reminderEnabled ? 1 : 0); }
+  if (data.reminderNotifId !== undefined) { sets.push('reminder_notif_id = ?'); values.push(data.reminderNotifId ?? null); }
+  if (data.recurrenceMonths !== undefined) { sets.push('recurrence_months = ?'); values.push(data.recurrenceMonths ?? null); }
+  if (data.status !== undefined) { sets.push('status = ?'); values.push(data.status); }
+
+  if (sets.length === 0) return;
+
+  sets.push('updated_at = ?');
+  values.push(now);
+  values.push(id);
+
+  await db.runAsync(`UPDATE maintenance_event SET ${sets.join(', ')} WHERE id = ?`, values);
 }
 
 export async function deleteEvent(id: string): Promise<void> {
@@ -175,12 +168,18 @@ export async function getTotalCostByAsset(assetId: string): Promise<number> {
 
 export async function getAnnualCost(year: number): Promise<number> {
   const db = await getDatabase();
-  const row = await db.getFirstAsync<{ total: number }>(
-    `SELECT COALESCE(SUM(cost), 0) as total FROM maintenance_event 
+  const yearStr = year.toString();
+  const eventsRow = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(cost), 0) as total FROM maintenance_event
      WHERE strftime('%Y', event_date) = ?`,
-    [year.toString()]
+    [yearStr]
   );
-  return row?.total ?? 0;
+  const assetsRow = await db.getFirstAsync<{ total: number }>(
+    `SELECT COALESCE(SUM(purchase_price), 0) as total FROM asset
+     WHERE archived = 0 AND strftime('%Y', purchase_date) = ?`,
+    [yearStr]
+  );
+  return (eventsRow?.total ?? 0) + (assetsRow?.total ?? 0);
 }
 
 export async function getUpcomingCost(): Promise<number> {
@@ -220,20 +219,33 @@ export async function getMonthlyCosts(year: number): Promise<{ month: number; to
   return result;
 }
 
-// Dépenses par catégorie de bien sur une année
+// Dépenses par catégorie de bien sur une année — agrège les coûts d'événements
+// passés ET le prix d'achat des biens acquis dans l'année.
 export async function getCostByCategory(year: number): Promise<{ categoryId: string; total: number }[]> {
   const db = await getDatabase();
+  const yearStr = year.toString();
   const rows = await db.getAllAsync<{ category_id: string; total: number }>(
-    `SELECT a.category_id, COALESCE(SUM(me.cost), 0) as total
-     FROM maintenance_event me
-     INNER JOIN asset a ON me.asset_id = a.id
-     WHERE strftime('%Y', me.event_date) = ?
-     AND me.status = 'past'
-     AND me.cost IS NOT NULL
-     AND a.archived = 0
-     GROUP BY a.category_id
+    `SELECT category_id, SUM(total) as total FROM (
+       SELECT a.category_id, COALESCE(SUM(me.cost), 0) as total
+       FROM maintenance_event me
+       INNER JOIN asset a ON me.asset_id = a.id
+       WHERE strftime('%Y', me.event_date) = ?
+       AND me.status = 'past'
+       AND me.cost IS NOT NULL
+       AND a.archived = 0
+       GROUP BY a.category_id
+       UNION ALL
+       SELECT category_id, COALESCE(SUM(purchase_price), 0) as total
+       FROM asset
+       WHERE archived = 0
+       AND purchase_price IS NOT NULL
+       AND strftime('%Y', purchase_date) = ?
+       GROUP BY category_id
+     )
+     GROUP BY category_id
+     HAVING total > 0
      ORDER BY total DESC`,
-    [year.toString()]
+    [yearStr, yearStr]
   );
   return rows.map(r => ({ categoryId: r.category_id, total: r.total }));
 }
