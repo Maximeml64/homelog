@@ -14,7 +14,7 @@ export const INVOICE_SCAN_MAX_PAGES = 4;
 
 // ─── Liens / contact ──────────────────────────────────────────────────────
 
-export const SUPPORT_EMAIL = 'm.maurylaribiere@gmail.com';
+export const SUPPORT_EMAIL = 'contact@mdlnlab.com';
 
 export const PRIVACY_URL =
   'https://momentous-locket-2af.notion.site/POLITIQUE-DE-CONFIDENTIALIT-Homelog-34284071bf3e801b9e04c95523a335f1';

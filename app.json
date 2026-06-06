@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1A5C4A"
+      "backgroundColor": "#1F2937"
     },
     "ios": {
       "supportsTablet": false,
@@ -46,7 +46,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#1A5C4A"
+        "backgroundColor": "#1F2937"
       },
       "package": "com.homelog.app",
       "versionCode": 1,
@@ -74,7 +74,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#1A5C4A"
+          "color": "#1F2937"
         }
       ],
       "@react-native-community/datetimepicker",
