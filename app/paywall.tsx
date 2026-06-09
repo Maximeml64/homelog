@@ -6,7 +6,6 @@ import {
   Alert,
   Linking,
   Pressable,
-  ScrollView,
   View,
 } from 'react-native';
 import { router } from 'expo-router';
