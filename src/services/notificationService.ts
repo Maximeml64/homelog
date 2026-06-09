@@ -56,14 +56,3 @@ export async function cancelReminder(id: string): Promise<void> {
 export async function cancelAllReminders(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }
-
-export function parseDateFR(dateStr: string): Date | null {
-  const parts = dateStr.split('/');
-  if (parts.length !== 3) return null;
-  const [day, month, year] = parts.map(Number);
-  if (!day || !month || !year || year < 2024) return null;
-  const date = new Date(year, month - 1, day, 9, 0, 0);
-  if (isNaN(date.getTime())) return null;
-  if (date <= new Date()) return null;
-  return date;
-}
