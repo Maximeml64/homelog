@@ -118,6 +118,4 @@ export const theme = {
   hitSlop: HIT_SLOP,
   tabBar: TAB_BAR,
 } as const;
-
-export type Theme = typeof theme;
 export default theme;

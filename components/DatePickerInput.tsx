@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Calendar } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SPACING } from '../constants/theme';
+import { COLORS, FONTS, SPACING } from '../constants/theme';
 
 interface Props {
   value: string; // ISO format YYYY-MM-DD ou vide

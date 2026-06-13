@@ -22,7 +22,6 @@ import {
   Camera,
   ChevronRight,
   FileText,
-  Plus,
   ShieldCheck,
   ShieldOff,
   Sparkles,

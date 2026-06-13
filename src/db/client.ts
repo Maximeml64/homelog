@@ -38,7 +38,6 @@ async function initSchema(db: SQLite.SQLiteDatabase): Promise<void> {
     )
     .catch(() => null);
 
-  const isFreshInstall = versionRow === null;
   const currentVersion = versionRow ? parseInt(versionRow.value) : 0;
 
   // Applique les migrations manquantes. Chaque statement est best-effort :
