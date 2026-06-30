@@ -12,8 +12,10 @@ import {
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   Camera,
+  FileText,
   ImagePlus,
   Plus,
   ScanLine,
@@ -30,14 +32,18 @@ import {
 } from '../../components/ui';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '../../constants/theme';
 import { ApiError } from '../../src/services/apiClient';
-import { scanInvoice } from '../../src/services/invoiceScanService';
+import {
+  scanInvoice,
+  ScanInput,
+  ScanInputError,
+} from '../../src/services/invoiceScanService';
 import {
   EventPrefillData,
   useEventScanPrefillStore,
 } from '../../src/stores/eventScanPrefillStore';
 import type { ParsedInvoice } from '../../src/types';
 
-const MAX_IMAGES = 4;
+const MAX_ITEMS = 4;
 
 type Step = 'selecting' | 'ready' | 'scanning' | 'preview';
 
@@ -72,19 +78,19 @@ function editableToPrefill(edit: EditableEventParse): EventPrefillData {
 export default function ScanEventInvoiceScreen() {
   const { assetId } = useLocalSearchParams<{ assetId: string }>();
   const [step, setStep] = useState<Step>('selecting');
-  const [imageUris, setImageUris] = useState<string[]>([]);
+  const [items, setItems] = useState<ScanInput[]>([]);
   const [editable, setEditable] = useState<EditableEventParse | null>(null);
 
-  function addImages(uris: string[]) {
-    setImageUris((prev) => {
-      const next = [...prev, ...uris].slice(0, MAX_IMAGES);
+  function addItems(newItems: ScanInput[]) {
+    setItems((prev) => {
+      const next = [...prev, ...newItems].slice(0, MAX_ITEMS);
       if (next.length > 0) setStep('ready');
       return next;
     });
   }
 
-  function removeImage(index: number) {
-    setImageUris((prev) => {
+  function removeItem(index: number) {
+    setItems((prev) => {
       const next = prev.filter((_, i) => i !== index);
       if (next.length === 0) setStep('selecting');
       return next;
@@ -105,7 +111,7 @@ export default function ScanEventInvoiceScreen() {
       quality: 1,
     });
     if (!result.canceled && result.assets.length > 0) {
-      addImages([result.assets[0].uri]);
+      addItems([{ uri: result.assets[0].uri, kind: 'image' }]);
     }
   }
 
@@ -116,7 +122,7 @@ export default function ScanEventInvoiceScreen() {
       Alert.alert('Permission refusée', "L'accès à la galerie est nécessaire.");
       return;
     }
-    const remaining = MAX_IMAGES - imageUris.length;
+    const remaining = MAX_ITEMS - items.length;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'images',
       allowsMultipleSelection: true,
@@ -124,30 +130,48 @@ export default function ScanEventInvoiceScreen() {
       quality: 1,
     });
     if (!result.canceled && result.assets.length > 0) {
-      addImages(result.assets.map((a) => a.uri));
+      addItems(result.assets.map((a) => ({ uri: a.uri, kind: 'image' })));
+    }
+  }
+
+  async function handleDocument() {
+    if (items.length >= MAX_ITEMS) return;
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      copyToCacheDirectory: true,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      addItems([{ uri: result.assets[0].uri, kind: 'pdf' }]);
     }
   }
 
   function handleAddPress() {
-    if (imageUris.length >= MAX_IMAGES) return;
+    if (items.length >= MAX_ITEMS) return;
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Annuler', 'Prendre une photo', 'Choisir dans la galerie'],
+          options: [
+            'Annuler',
+            'Prendre une photo',
+            'Choisir dans la galerie',
+            'Choisir un fichier (PDF)',
+          ],
           cancelButtonIndex: 0,
         },
         (idx) => {
           if (idx === 1) handleCamera();
           if (idx === 2) handleGallery();
+          if (idx === 3) handleDocument();
         },
       );
     } else {
       Alert.alert(
-        'Ajouter une image',
+        'Ajouter un document',
         'Source ?',
         [
           { text: 'Prendre une photo', onPress: handleCamera },
           { text: 'Galerie', onPress: handleGallery },
+          { text: 'Fichier PDF', onPress: handleDocument },
           { text: 'Annuler', style: 'cancel' },
         ],
       );
@@ -157,12 +181,14 @@ export default function ScanEventInvoiceScreen() {
   async function handleAnalyze() {
     setStep('scanning');
     try {
-      const result = await scanInvoice(imageUris);
+      const result = await scanInvoice(items);
       setEditable(parsedToEditable(result));
       setStep('preview');
     } catch (e) {
       setStep('ready');
-      if (e instanceof ApiError && e.status === 429) {
+      if (e instanceof ScanInputError) {
+        Alert.alert('Fichier trop volumineux', e.message);
+      } else if (e instanceof ApiError && e.status === 429) {
         Alert.alert(
           'Limite atteinte',
           'Limite atteinte (20 scans/jour). Réessayez demain.',
@@ -172,7 +198,7 @@ export default function ScanEventInvoiceScreen() {
       } else {
         Alert.alert(
           'Analyse impossible',
-          "Nous n'avons pas pu lire ce document. Essayez avec une image plus nette.",
+          "Nous n'avons pas pu lire ce document. Essayez avec une image plus nette ou un PDF.",
         );
       }
     }
@@ -180,9 +206,11 @@ export default function ScanEventInvoiceScreen() {
 
   function handleConfirm() {
     if (!editable) return;
+    // Si un événement reçoit une pièce jointe de couverture, ce doit être une image.
+    const coverUri = items.find((it) => it.kind === 'image')?.uri;
     useEventScanPrefillStore
       .getState()
-      .setPendingPrefill(editableToPrefill(editable), imageUris[0]);
+      .setPendingPrefill(editableToPrefill(editable), coverUri);
     router.replace({ pathname: '/event/add', params: { assetId } });
   }
 
@@ -192,6 +220,10 @@ export default function ScanEventInvoiceScreen() {
   ) {
     setEditable((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
+
+  // L'aperçu reflète la couverture réelle (une image, jamais un PDF) ;
+  // à défaut d'image, on retombe sur le premier document (placeholder PDF).
+  const firstItem = items.find((it) => it.kind === 'image') ?? items[0];
 
   // ─── RENDER : SCANNING ────────────────────────────────────────────────
   if (step === 'scanning') {
@@ -277,7 +309,7 @@ export default function ScanEventInvoiceScreen() {
             </StyledText>
           </View>
 
-          {imageUris[0] && (
+          {firstItem && (
             <View
               style={{
                 marginBottom: SPACING.xl,
@@ -286,12 +318,33 @@ export default function ScanEventInvoiceScreen() {
                 backgroundColor: COLORS.surfaceAlt,
               }}
             >
-              <Image
-                source={imageUris[0]}
-                style={{ width: '100%', height: 180 }}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
+              {firstItem.kind === 'pdf' ? (
+                <View
+                  style={{
+                    width: '100%',
+                    height: 180,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: SPACING.sm,
+                  }}
+                >
+                  <FileText
+                    size={40}
+                    color={COLORS.textSecondary}
+                    strokeWidth={1.5}
+                  />
+                  <StyledText variant="smallMedium" color={COLORS.textSecondary}>
+                    Document PDF
+                  </StyledText>
+                </View>
+              ) : (
+                <Image
+                  source={firstItem.uri}
+                  style={{ width: '100%', height: 180 }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                />
+              )}
             </View>
           )}
 
@@ -372,7 +425,7 @@ export default function ScanEventInvoiceScreen() {
             ]}
           >
             <StyledText variant="smallMedium" color={COLORS.textSecondary}>
-              Reprendre une photo
+              Reprendre un document
             </StyledText>
           </Pressable>
         </View>
@@ -404,19 +457,19 @@ export default function ScanEventInvoiceScreen() {
             </StyledText>
           </View>
           <StyledText variant="h1" style={{ fontSize: 28, lineHeight: 34 }}>
-            Photographiez votre devis ou facture
+            Importez votre devis ou facture
           </StyledText>
           <StyledText
             variant="body"
             color={COLORS.textSecondary}
             style={{ marginTop: SPACING.sm }}
           >
-            Nous pré-remplissons l'événement et activons le rappel
-            si la date est future. Jusqu'à {MAX_IMAGES} pages.
+            Photo ou PDF — nous pré-remplissons l'événement et activons
+            le rappel si la date est future. Jusqu'à {MAX_ITEMS} documents.
           </StyledText>
         </View>
 
-        {imageUris.length > 0 && (
+        {items.length > 0 && (
           <View style={{ marginBottom: SPACING.xl }}>
             <View
               style={{
@@ -427,11 +480,11 @@ export default function ScanEventInvoiceScreen() {
               }}
             >
               <StyledText variant="eyebrow">
-                {imageUris.length} PAGE{imageUris.length > 1 ? 'S' : ''}
+                {items.length} DOCUMENT{items.length > 1 ? 'S' : ''}
               </StyledText>
               <StyledText variant="caption" color={COLORS.textTertiary}>
-                {MAX_IMAGES - imageUris.length} restante
-                {MAX_IMAGES - imageUris.length > 1 ? 's' : ''}
+                {MAX_ITEMS - items.length} restant
+                {MAX_ITEMS - items.length > 1 ? 's' : ''}
               </StyledText>
             </View>
             <ScrollView
@@ -442,26 +495,48 @@ export default function ScanEventInvoiceScreen() {
                 paddingRight: SPACING.lg,
               }}
             >
-              {imageUris.map((uri, idx) => (
+              {items.map((item, idx) => (
                 <View
-                  key={`${uri}-${idx}`}
+                  key={`${item.uri}-${idx}`}
                   style={{
                     position: 'relative',
                     borderRadius: RADIUS.md,
                     overflow: 'hidden',
                   }}
                 >
-                  <Image
-                    source={uri}
-                    style={{
-                      width: 96,
-                      height: 128,
-                      backgroundColor: COLORS.surfaceAlt,
-                    }}
-                    contentFit="cover"
-                    cachePolicy="memory-disk"
-                    recyclingKey={uri}
-                  />
+                  {item.kind === 'pdf' ? (
+                    <View
+                      style={{
+                        width: 96,
+                        height: 128,
+                        backgroundColor: COLORS.surfaceAlt,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <FileText
+                        size={28}
+                        color={COLORS.textSecondary}
+                        strokeWidth={1.5}
+                      />
+                      <StyledText variant="caption" color={COLORS.textSecondary}>
+                        PDF
+                      </StyledText>
+                    </View>
+                  ) : (
+                    <Image
+                      source={item.uri}
+                      style={{
+                        width: 96,
+                        height: 128,
+                        backgroundColor: COLORS.surfaceAlt,
+                      }}
+                      contentFit="cover"
+                      cachePolicy="memory-disk"
+                      recyclingKey={item.uri}
+                    />
+                  )}
                   <View
                     style={{
                       position: 'absolute',
@@ -486,7 +561,7 @@ export default function ScanEventInvoiceScreen() {
                     </StyledText>
                   </View>
                   <Pressable
-                    onPress={() => removeImage(idx)}
+                    onPress={() => removeItem(idx)}
                     hitSlop={8}
                     style={({ pressed }) => [
                       {
@@ -507,7 +582,7 @@ export default function ScanEventInvoiceScreen() {
                   </Pressable>
                 </View>
               ))}
-              {imageUris.length < MAX_IMAGES && (
+              {items.length < MAX_ITEMS && (
                 <Pressable
                   onPress={handleAddPress}
                   style={({ pressed }) => [
@@ -539,7 +614,7 @@ export default function ScanEventInvoiceScreen() {
           </View>
         )}
 
-        {imageUris.length === 0 && (
+        {items.length === 0 && (
           <View style={{ gap: SPACING.md }}>
             <Card
               variant="outlined"
@@ -620,7 +695,50 @@ export default function ScanEventInvoiceScreen() {
                     color={COLORS.textSecondary}
                     style={{ marginTop: 2 }}
                   >
-                    Jusqu'à {MAX_IMAGES} pages multi-sélection.
+                    Jusqu'à {MAX_ITEMS} documents, multi-sélection.
+                  </StyledText>
+                </View>
+              </View>
+            </Card>
+            <Card
+              variant="outlined"
+              padding="lg"
+              radius="md"
+              onPress={handleDocument}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: SPACING.md,
+                }}
+              >
+                <View
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: COLORS.surfaceAlt,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <FileText
+                    size={22}
+                    color={COLORS.textSecondary}
+                    strokeWidth={1.75}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <StyledText variant="title">
+                    Choisir un fichier PDF
+                  </StyledText>
+                  <StyledText
+                    variant="small"
+                    color={COLORS.textSecondary}
+                    style={{ marginTop: 2 }}
+                  >
+                    Importez un devis ou une facture PDF.
                   </StyledText>
                 </View>
               </View>
@@ -628,7 +746,7 @@ export default function ScanEventInvoiceScreen() {
           </View>
         )}
 
-        {imageUris.length === 0 && (
+        {items.length === 0 && (
           <View
             style={{
               marginTop: SPACING.xxl,
@@ -685,9 +803,9 @@ export default function ScanEventInvoiceScreen() {
             <Sparkles size={16} color={COLORS.textInverse} strokeWidth={2} />
             <StyledText variant="title" color={COLORS.textInverse}>
               Analyser{' '}
-              {imageUris.length === 1
+              {items.length === 1
                 ? 'le document'
-                : `${imageUris.length} pages`}
+                : `${items.length} documents`}
             </StyledText>
           </Pressable>
         </View>

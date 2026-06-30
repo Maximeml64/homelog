@@ -7,12 +7,12 @@ import { ParsedInvoice } from '../types';
 
 interface PendingPrefill {
   data: ParsedInvoice;
-  imageUri: string;
+  imageUri?: string;
 }
 
 interface ScanPrefillStore {
   pendingPrefill: PendingPrefill | null;
-  setPendingPrefill: (data: ParsedInvoice, imageUri: string) => void;
+  setPendingPrefill: (data: ParsedInvoice, imageUri?: string) => void;
   consumePendingPrefill: () => PendingPrefill | null;
 }
 
